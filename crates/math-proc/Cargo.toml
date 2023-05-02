@@ -1,0 +1,13 @@
+[package]
+name = "math-proc"
+description = "Procedural macros used to generate the final types from the `math` crate."
+authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.26"
+syn = "2.0.15"

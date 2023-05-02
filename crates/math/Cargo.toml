@@ -1,0 +1,9 @@
+[package]
+name = "math"
+description = "Implementations of vector and matrix types designed to work with OpenGL."
+authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+math-proc = { path = "../math-proc" }
