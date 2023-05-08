@@ -1,25 +1,21 @@
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Token};
+use syn::{parse_macro_input, Ident, LitInt, Token, Type, Visibility};
 
 mod matrix;
 mod vector;
 
 
 pub(crate) struct BaseInput {
-    pub struct_vis: syn::Visibility,
-    pub struct_name: syn::Ident,
-    pub inner_type: syn::Type,
+    pub struct_vis: Visibility,
+    pub struct_name: Ident,
+    pub inner_type: Type,
 }
 
 impl Parse for BaseInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // All visibility modifiers start with pub, and are then optionally followed by `(...)`. If there is no modifier
         // present, the struct has inherited visibility.
-        let struct_vis = if input.peek(Token![pub]) {
-            input.parse()?
-        } else {
-            syn::Visibility::Inherited
-        };
+        let struct_vis = if input.peek(Token![pub]) { input.parse()? } else { Visibility::Inherited };
 
         // Struct keyword, then struct name
         input.parse::<Token![struct]>()?;
@@ -51,7 +47,7 @@ impl Parse for VectorInput {
         input.parse::<Token![,]>()?;
 
         // Then just the number of elements
-        let num_elements = input.parse::<syn::LitInt>()?.base10_parse()?;
+        let num_elements = input.parse::<LitInt>()?.base10_parse()?;
 
         Ok(Self { base, num_elements })
     }
@@ -71,9 +67,9 @@ impl Parse for MatrixInput {
         input.parse::<Token![,]>()?;
 
         // Then we want two numbers this time, one for rows and one for columns
-        let num_rows = input.parse::<syn::LitInt>()?.base10_parse()?;
+        let num_rows = input.parse::<LitInt>()?.base10_parse()?;
         input.parse::<Token![,]>()?;
-        let num_cols = input.parse::<syn::LitInt>()?.base10_parse()?;
+        let num_cols = input.parse::<LitInt>()?.base10_parse()?;
 
         Ok(Self { base, num_rows, num_cols })
     }
