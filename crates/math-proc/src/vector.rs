@@ -3,12 +3,38 @@
 use indefinite::indefinite_article_only_capitalized;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::Ident;
+use syn::parse::{Parse, ParseStream};
+use syn::{parse_quote, Ident, LitInt, Token};
 
-use crate::{BaseInput, VectorInput};
+use crate::common::{self, BaseInput};
 
+pub struct VectorInput {
+    pub base: BaseInput,
+    pub num_elements: usize,
+}
 
-pub(crate) fn vector_base(input: VectorInput) -> TokenStream {
+impl Parse for VectorInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        // After base input, we want another comma
+        let base = input.parse()?;
+        input.parse::<Token![,]>()?;
+
+        // Then just the number of elements
+        let num_elements = input.parse::<LitInt>()?.base10_parse()?;
+
+        Ok(Self { base, num_elements })
+    }
+}
+
+impl AsRef<BaseInput> for VectorInput {
+    fn as_ref(&self) -> &BaseInput {
+        &self.base
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+
+pub fn vector_base(input: VectorInput) -> TokenStream {
     let VectorInput {
         base: BaseInput {
             struct_vis,
@@ -40,11 +66,15 @@ pub(crate) fn vector_base(input: VectorInput) -> TokenStream {
 
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
-    output.extend(impl_array_conversions(&input));
-    output.extend(impl_scalar_ops(&input));
+    output.extend(common::impl_scalar_ops(&input, input.num_elements, |n| parse_quote!(self[#n])));
+    output.extend(common::impl_container_conversions(
+        &input,
+        &parse_quote! { [#inner_type; #num_elements] },
+        &parse_quote!(v),
+    ));
+
     output
 }
-
 
 fn impl_indexing(input: &VectorInput) -> TokenStream {
     let VectorInput {
@@ -69,23 +99,22 @@ fn impl_indexing(input: &VectorInput) -> TokenStream {
     }
 }
 
-
 fn impl_constructor(input: &VectorInput) -> TokenStream {
     let VectorInput {
         base: BaseInput { struct_name, inner_type, .. },
         num_elements,
     } = input;
-    let num_elements = *num_elements;
+    let num_args = *num_elements;
 
     let param_types = std::iter::repeat(inner_type);
-    let param_names: Vec<Ident> = if num_elements <= 4 {
+    let param_names: Vec<Ident> = if num_args <= 4 {
         ["x", "y", "z", "w"]
             .into_iter()
-            .take(num_elements)
+            .take(num_args)
             .map(|s| Ident::new(s, Span::call_site()))
             .collect()
     } else {
-        (1..=num_elements)
+        (1..=num_args)
             .map(|n| Ident::new(&format!("v{n}"), Span::call_site()))
             .collect()
     };
@@ -100,114 +129,4 @@ fn impl_constructor(input: &VectorInput) -> TokenStream {
             }
         }
     }
-}
-
-
-fn impl_array_conversions(input: &VectorInput) -> TokenStream {
-    let VectorInput {
-        base: BaseInput { struct_name, inner_type, .. },
-        num_elements,
-    } = input;
-    let num_elements = *num_elements;
-    let inner_type = quote!{ [#inner_type; #num_elements] };
-
-    quote! {
-        // &Vec3 as &[f32; 3]
-        impl ::core::convert::AsRef<#inner_type> for #struct_name {
-            fn as_ref(&self) -> &#inner_type {
-                &self.v
-            }
-        }
-
-        // &mut Vec3 as &mut [f32; 3]
-        impl ::core::convert::AsMut<#inner_type> for #struct_name {
-            fn as_mut(&mut self) -> &mut #inner_type {
-                &mut self.v
-            }
-        }
-
-        // [f32; 3] -> Vec3
-        impl ::core::convert::From<#inner_type> for #struct_name {
-            fn from(value: #inner_type) -> Self {
-                #struct_name { v: value }
-            }
-        }
-
-        // Vec3 -> [f32; 3]
-        impl ::core::convert::From<#struct_name> for #inner_type {
-            fn from(value: #struct_name) -> Self {
-                value.v
-            }
-        }
-
-        // &Vec3 -> &[f32; 3]
-        impl<'a> ::core::convert::From<&'a #struct_name> for &'a #inner_type {
-            fn from(value: &'a #struct_name) -> Self {
-                &value.v
-            }
-        }
-
-        // &mut Vec3 -> &mut [f32; 3]
-        impl<'a> ::core::convert::From<&'a mut #struct_name> for &'a mut #inner_type {
-            fn from(value: &'a mut #struct_name) -> Self {
-                &mut value.v
-            }
-        }
-    }
-}
-
-
-fn impl_scalar_ops(input: &VectorInput) -> TokenStream {
-    use quote::quote as q;
-
-    let VectorInput {
-        base: BaseInput { struct_name, inner_type, .. },
-        num_elements,
-    } = input;
-    let num_elements = *num_elements;
-
-    #[rustfmt::skip]
-    let operators = [
-        (q!{ Add }, q!{ add }, q!{ + }),
-        (q!{ Sub }, q!{ sub }, q!{ - }),
-        (q!{ Mul }, q!{ mul }, q!{ * }),
-        (q!{ Div }, q!{ div }, q!{ / }),
-    ];
-
-    /*
-     * For each operator, we need one `impl` for of these configurations:
-     * 1. Vec + f32        2. &Vec + f32      3. Vec + &f32      4. &Vec + &f32
-     */
-    #[rustfmt::skip]
-    let operator_configs = [
-        /* bounds      , left-hand param       , right-hand param      */
-        (q!{ <      > }, q!{     #struct_name }, q!{     #inner_type  }),
-        (q!{ <'a    > }, q!{ &'a #struct_name }, q!{     #inner_type  }),
-        (q!{ <    'b> }, q!{     #struct_name }, q!{ &'b #inner_type  }),
-        (q!{ <'a, 'b> }, q!{ &'a #struct_name }, q!{ &'b #inner_type  }),
-    ];
-
-    let mut output = TokenStream::new();
-
-    for (operator_trait, operator_func, operator_token) in &operators {
-        for (trait_bounds, lhs_type, rhs_type) in &operator_configs {
-            // All of these operators involve constructing a new vector with updated values inside; we can just call
-            // `Self::new` with varying arguments.
-            let new_args = (0..num_elements).map(|n| q! { self[#n] #operator_token rhs });
-
-            let op_impl = quote! {
-                impl #trait_bounds ::core::ops::#operator_trait<#rhs_type> for #lhs_type {
-                    type Output = #struct_name;
-
-                    fn #operator_func(self, rhs: #rhs_type) -> Self::Output {
-                        <#struct_name>::new( #(#new_args),* )
-                    }
-                }
-            };
-
-            output.extend(op_impl);
-        }
-    }
-
-    output
 }

@@ -1,84 +1,18 @@
-use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Ident, LitInt, Token, Type, Visibility};
+//! Macros for generating matrices and vectors.
+//!
+//! The inner workings of this crate are an implementation detail. The only reason there are doc-comments here at all is
+//! because I'm insane and like to do things "properly" even if nobody else will ever read it.
+//!
+//! See the `math` crate for end-user documentation.
 
+mod common;
 mod matrix;
 mod vector;
 
+use syn::parse_macro_input;
 
-pub(crate) struct BaseInput {
-    pub struct_vis: Visibility,
-    pub struct_name: Ident,
-    pub inner_type: Type,
-}
-
-impl Parse for BaseInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        // All visibility modifiers start with pub, and are then optionally followed by `(...)`. If there is no modifier
-        // present, the struct has inherited visibility.
-        let struct_vis = if input.peek(Token![pub]) { input.parse()? } else { Visibility::Inherited };
-
-        // Struct keyword, then struct name
-        input.parse::<Token![struct]>()?;
-        let struct_name = input.parse()?;
-
-        // Comma, then inner type
-        input.parse::<Token![,]>()?;
-        let inner_type = input.parse()?;
-
-        Ok(Self {
-            struct_vis,
-            struct_name,
-            inner_type,
-        })
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-pub(crate) struct VectorInput {
-    pub base: BaseInput,
-    pub num_elements: usize,
-}
-
-impl Parse for VectorInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        // After base input, we want another comma
-        let base = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        // Then just the number of elements
-        let num_elements = input.parse::<LitInt>()?.base10_parse()?;
-
-        Ok(Self { base, num_elements })
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-pub(crate) struct MatrixInput {
-    pub base: BaseInput,
-    pub num_rows: usize,
-    pub num_cols: usize,
-}
-
-impl Parse for MatrixInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let base = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        // Then we want two numbers this time, one for rows and one for columns
-        let num_rows = input.parse::<LitInt>()?.base10_parse()?;
-        input.parse::<Token![,]>()?;
-        let num_cols = input.parse::<LitInt>()?.base10_parse()?;
-
-        Ok(Self { base, num_rows, num_cols })
-    }
-}
-
-
-// =====================================================================================================================
-// =====================================================================================================================
-
+use crate::matrix::{matrix_base, MatrixInput};
+use crate::vector::{vector_base, VectorInput};
 
 /// Creates a vector struct.
 ///
@@ -108,10 +42,9 @@ impl Parse for MatrixInput {
 #[proc_macro]
 pub fn create_vector(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as VectorInput);
-    let output = vector::vector_base(input);
+    let output = vector_base(input);
     output.into()
 }
-
 
 /// Creates a matrix struct.
 ///
@@ -142,6 +75,6 @@ pub fn create_vector(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 #[proc_macro]
 pub fn create_matrix(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as MatrixInput);
-    let output = matrix::matrix_base(input);
+    let output = matrix_base(input);
     output.into()
 }
