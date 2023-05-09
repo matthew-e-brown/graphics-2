@@ -3,6 +3,7 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{BinOp, ExprIndex, Generics, Ident, Member, Path, Token, Type, Visibility};
 
+
 pub struct BaseInput {
     pub struct_vis: Visibility,
     pub struct_name: Ident,
@@ -48,28 +49,27 @@ where
 
     #[rustfmt::skip]
     let operators: [(Path, Ident, BinOp); 4] = [
-        /* the trait to implement   , the function in that trait to call, the operator it will use */
-        (pq!{ ::core::ops::Add }    , pq!{ add }                        , pq!{ + }),
-        (pq!{ ::core::ops::Sub }    , pq!{ sub }                        , pq!{ - }),
-        (pq!{ ::core::ops::Mul }    , pq!{ mul }                        , pq!{ * }),
-        (pq!{ ::core::ops::Div }    , pq!{ div }                        , pq!{ / }),
+        (pq!{ ::core::ops::Add }, pq!{ add }, pq!{ + }),
+        (pq!{ ::core::ops::Sub }, pq!{ sub }, pq!{ - }),
+        (pq!{ ::core::ops::Mul }, pq!{ mul }, pq!{ * }),
+        (pq!{ ::core::ops::Div }, pq!{ div }, pq!{ / }),
     ];
 
     /*
      * For each operator, we need one `impl` for of these configurations:
      * 1. Vec + f32        2. &Vec + f32      3. Vec + &f32      4. &Vec + &f32
+     *
+     * Which means we need several different configurations of lifetimes and reference vs. non-reference types.
      */
     #[rustfmt::skip]
     let operator_configs: [(Generics, Type, Type); 4] = [
-        /* trait impl generics, left-hand type parameter, right-hand type parameter */
-        (pq!{ <      > }      , pq!{     #struct_name } , pq!{     #inner_type }),
-        (pq!{ <'a    > }      , pq!{ &'a #struct_name } , pq!{     #inner_type }),
-        (pq!{ <    'b> }      , pq!{     #struct_name } , pq!{ &'b #inner_type }),
-        (pq!{ <'a, 'b> }      , pq!{ &'a #struct_name } , pq!{ &'b #inner_type }),
+        (pq!{ <      > }, pq!{     #struct_name }, pq!{     #inner_type }),
+        (pq!{ <'a    > }, pq!{ &'a #struct_name }, pq!{     #inner_type }),
+        (pq!{ <    'b> }, pq!{     #struct_name }, pq!{ &'b #inner_type }),
+        (pq!{ <'a, 'b> }, pq!{ &'a #struct_name }, pq!{ &'b #inner_type }),
     ];
 
     let mut output = TokenStream::new();
-
     for (trait_path, operator_func, operator_token) in &operators {
         for (trait_bounds, lhs_type, rhs_type) in &operator_configs {
             // All of these operators involve constructing a new vector with updated values inside; we can just call
@@ -101,11 +101,10 @@ where
 ///
 /// - `container_type` should be the type of the entire type that the vector or matrix contains, like `[f32; 2]`.
 /// - `container_name` is the name of that container as a member of the vector or matrix.
-pub fn impl_container_conversions<I: AsRef<BaseInput>>(
-    input: I,
-    container_type: &Type,
-    container_name: &Member,
-) -> TokenStream {
+pub fn impl_container_conversions<I>(input: I, container_type: &Type, container_name: &Member) -> TokenStream
+where
+    I: AsRef<BaseInput>,
+{
     let BaseInput { struct_name, .. } = input.as_ref();
 
     quote! {
