@@ -60,10 +60,6 @@ pub fn vector_base(input: VectorInput) -> TokenStream {
         }
     };
 
-    // TODO: take a bunch of these out of here and make them separate macros, so that it's possible to create vector
-    // structs with only some of these features. For example, a BVec would not support binary + operations with another
-    // bool.
-
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
     output.extend(common::impl_scalar_ops(&input, input.num_elements, |n| parse_quote!(self[#n])));

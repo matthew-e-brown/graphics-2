@@ -11,7 +11,7 @@ mod vector;
 
 use syn::parse_macro_input;
 
-use crate::matrix::{matrix_base, MatrixInput};
+use crate::matrix::{matrix_base, MatrixInput, MatrixRowColInput};
 use crate::vector::{vector_base, VectorInput};
 
 /// Creates a vector struct.
@@ -20,7 +20,7 @@ use crate::vector::{vector_base, VectorInput};
 ///
 /// This macro takes three arguments:
 ///
-/// - The struct's declaration (`[visibility] struct <name>`);
+/// - The struct's declaration "header" (`[visibility] struct <name>`);
 /// - What type it should contain (any scalar type should work); and
 /// - How many elements it should have (a [`usize`] literal).
 ///
@@ -76,5 +76,14 @@ pub fn create_vector(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 pub fn create_matrix(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as MatrixInput);
     let output = matrix_base(input);
+    output.into()
+}
+
+
+#[proc_macro]
+pub fn impl_from_rows_and_cols(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as MatrixRowColInput);
+    let mut output = matrix::impl_col_conversions(&input);
+    output.extend(matrix::impl_row_conversions(&input));
     output.into()
 }

@@ -34,8 +34,8 @@ impl Parse for BaseInput {
 
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Implements [`Add`][std::ops::Add], [`Sub`][std::ops::Sub], [`Mul`][std::ops::Mul], and [`Div`][std::ops::Div] as
-/// component-wise operations for the given input parameters.
+/// Implements [`Mul`][std::ops::Mul] and [`Div`][std::ops::Div] between matrices/vectors and their contained scalar
+/// type as component-wise operations for the given input parameters.
 ///
 /// - `num_args` is the number of arguments this object's constructor takes.
 /// - `indexer` is a function that should return an expression providing an index into the container at a given point.
@@ -48,9 +48,7 @@ where
     let BaseInput { struct_name, inner_type, .. } = input.as_ref();
 
     #[rustfmt::skip]
-    let operators: [(Path, Ident, BinOp); 4] = [
-        (pq!{ ::core::ops::Add }, pq!{ add }, pq!{ + }),
-        (pq!{ ::core::ops::Sub }, pq!{ sub }, pq!{ - }),
+    let operators: [(Path, Ident, BinOp); 2] = [
         (pq!{ ::core::ops::Mul }, pq!{ mul }, pq!{ * }),
         (pq!{ ::core::ops::Div }, pq!{ div }, pq!{ / }),
     ];
@@ -70,6 +68,7 @@ where
     ];
 
     let mut output = TokenStream::new();
+
     for (trait_path, operator_func, operator_token) in &operators {
         for (trait_bounds, lhs_type, rhs_type) in &operator_configs {
             // All of these operators involve constructing a new vector with updated values inside; we can just call
@@ -99,54 +98,60 @@ where
 /// Creates all sorts of conversions that allow the vector or matrix to be converted back and forth from the type it
 /// contains.
 ///
-/// - `container_type` should be the type of the entire type that the vector or matrix contains, like `[f32; 2]`.
-/// - `container_name` is the name of that container as a member of the vector or matrix.
-pub fn impl_container_conversions<I>(input: I, container_type: &Type, container_name: &Member) -> TokenStream
+/// - `wrapped_type` is the entire type that the vector or matrix contains (`[f32; 2]` instead of `f32`).
+/// - `member_name` is the name of that container as a member of the vector or matrix (`.m` or `.data`, for example).
+pub fn impl_container_conversions<I>(input: I, wrapped_type: &Type, member_name: &Member) -> TokenStream
 where
     I: AsRef<BaseInput>,
 {
     let BaseInput { struct_name, .. } = input.as_ref();
 
     quote! {
-        // &Vec3 as &[f32; 3], or &Mat4 as &[[f32; 4]; 4]
-        impl ::core::convert::AsRef<#container_type> for #struct_name {
-            fn as_ref(&self) -> &#container_type {
-                &self.#container_name
+        // - `&Vec3` as `&[f32; 3]`
+        // - `&Mat4` as `&[[f32; 4]; 4]`
+        impl ::core::convert::AsRef<#wrapped_type> for #struct_name {
+            fn as_ref(&self) -> &#wrapped_type {
+                &self.#member_name
             }
         }
 
-        // &mut Vec3 as &mut [f32; 3] or &mut Mat4 as &mut [[f32; 4]; 4]
-        impl ::core::convert::AsMut<#container_type> for #struct_name {
-            fn as_mut(&mut self) -> &mut #container_type {
-                &mut self.#container_name
+        // - `&mut Vec3` as `&mut [f32; 3]`
+        // - `&mut Mat4` as `&mut [[f32; 4]; 4]`
+        impl ::core::convert::AsMut<#wrapped_type> for #struct_name {
+            fn as_mut(&mut self) -> &mut #wrapped_type {
+                &mut self.#member_name
             }
         }
 
-        // [f32; 3] -> Vec3, or [[f32; 4]; 4] -> Mat4
-        impl ::core::convert::From<#container_type> for #struct_name {
-            fn from(value: #container_type) -> Self {
-                #struct_name { #container_name: value }
+        // - `[f32; 3]` -> `Vec3`
+        // - `[[f32; 4]; 4]` -> `Mat4`
+        impl ::core::convert::From<#wrapped_type> for #struct_name {
+            fn from(value: #wrapped_type) -> Self {
+                #struct_name { #member_name: value }
             }
         }
 
-        // Vec3 -> [f32; 3], or Mat4 -> [[f32; 4]; 4]
-        impl ::core::convert::From<#struct_name> for #container_type {
+        // - `Vec3` -> `[f32; 3]`
+        // - `Mat4` -> `[[f32; 4]; 4]`
+        impl ::core::convert::From<#struct_name> for #wrapped_type {
             fn from(value: #struct_name) -> Self {
-                value.#container_name
+                value.#member_name
             }
         }
 
-        // &Vec3 -> &[f32; 3], or &Mat4 -> &[[f32; 4]; 4]
-        impl<'a> ::core::convert::From<&'a #struct_name> for &'a #container_type {
+        // - `&Vec3` -> `&[f32; 3]`
+        // - `&Mat4` -> `&[[f32; 4]; 4]`
+        impl<'a> ::core::convert::From<&'a #struct_name> for &'a #wrapped_type {
             fn from(value: &'a #struct_name) -> Self {
-                &value.#container_name
+                &value.#member_name
             }
         }
 
-        // &mut Vec3 -> &mut [f32; 3], or &mut Mat4 -> &mut [[f32; 4]; 4]
-        impl<'a> ::core::convert::From<&'a mut #struct_name> for &'a mut #container_type {
+        // - `&mut Vec3` -> `&mut [f32; 3]`
+        // - `&mut Mat4` -> `&mut [[f32; 4]; 4]`
+        impl<'a> ::core::convert::From<&'a mut #struct_name> for &'a mut #wrapped_type {
             fn from(value: &'a mut #struct_name) -> Self {
-                &mut value.#container_name
+                &mut value.#member_name
             }
         }
     }
