@@ -4,45 +4,73 @@ use indefinite::indefinite_article_only_capitalized;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_quote, Expr, ExprArray, Ident, LitInt, Path, Token, Type};
+use syn::{parse_quote, Expr, ExprArray, Ident, LitInt, Token};
 
-use crate::common::{self, BaseInput};
+use crate::common::{self, BaseCreationInput, BaseSimpleInput};
+
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Main input struct
+// Structs for macro input
 
-pub struct MatrixInput {
-    pub base: BaseInput,
+
+fn parse_matrix_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize, usize)> {
+    let base = input.parse()?;
+    input.parse::<Token![,]>()?;
+    let num_rows = input.parse::<LitInt>()?.base10_parse()?;
+    input.parse::<Token![,]>()?;
+    let num_cols = input.parse::<LitInt>()?.base10_parse()?;
+
+    Ok((base, num_rows, num_cols))
+}
+
+/// Input for the base implementation of a matrix. Requires some extra things like visibility.
+pub struct CreationInput {
+    pub base: BaseCreationInput,
     pub num_rows: usize,
     pub num_cols: usize,
 }
 
-impl Parse for MatrixInput {
+impl Parse for CreationInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let base = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        // Then we want two numbers this time, one for rows and one for columns
-        let num_rows = input.parse::<LitInt>()?.base10_parse()?;
-        input.parse::<Token![,]>()?;
-        let num_cols = input.parse::<LitInt>()?.base10_parse()?;
-
+        let (base, num_rows, num_cols) = parse_matrix_input(input)?;
         Ok(Self { base, num_rows, num_cols })
     }
 }
 
-impl AsRef<BaseInput> for MatrixInput {
-    fn as_ref(&self) -> &BaseInput {
-        &self.base
+/// Input for all secondary matrix implementation functions; things that do not create the matrix.
+pub struct SimpleInput {
+    pub base: BaseSimpleInput,
+    pub num_rows: usize,
+    pub num_cols: usize,
+}
+
+impl Parse for SimpleInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (base, num_rows, num_cols) = parse_matrix_input(input)?;
+        Ok(Self { base, num_rows, num_cols })
     }
 }
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Helper functions
+
+/// Converts a 1-dimensional index (i.e., constructor argument) into a 2-dimensional one.
+#[inline]
+fn index_1d_to_2d(idx: usize, num_rows: usize, num_cols: usize) -> (usize, usize) {
+    let r = idx % num_rows;
+    let c = idx / num_cols;
+    (r, c)
+}
+
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Base implementation
 
-pub fn matrix_base(input: MatrixInput) -> TokenStream {
-    let MatrixInput {
-        base: BaseInput {
+
+pub fn create_base(input: CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput {
             struct_vis,
             struct_name,
             inner_type,
@@ -70,25 +98,21 @@ pub fn matrix_base(input: MatrixInput) -> TokenStream {
         }
     };
 
+    // These features are always available on all matrices
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
-    output.extend(common::impl_scalar_ops(&input, num_rows * num_cols, |n| {
-        let r = n % num_rows;
-        let c = n / num_cols;
-        parse_quote!(self[(#r, #c)])
-    }));
     output.extend(common::impl_container_conversions(
-        &input,
-        &parse_quote! { [[#inner_type; #num_rows]; #num_cols] },
+        struct_name,
+        &parse_quote!([[#inner_type; #num_rows]; #num_cols]),
         &parse_quote!(m),
     ));
 
     output
 }
 
-fn impl_indexing(input: &MatrixInput) -> TokenStream {
-    let MatrixInput {
-        base: BaseInput { struct_name, inner_type, .. },
+fn impl_indexing(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
         ..
     } = input;
 
@@ -109,9 +133,9 @@ fn impl_indexing(input: &MatrixInput) -> TokenStream {
     }
 }
 
-fn impl_constructor(input: &MatrixInput) -> TokenStream {
-    let MatrixInput {
-        base: BaseInput { struct_name, inner_type, .. },
+fn impl_constructor(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
         num_rows,
         num_cols,
     } = input;
@@ -163,85 +187,89 @@ fn impl_constructor(input: &MatrixInput) -> TokenStream {
     }
 }
 
-
 // ---------------------------------------------------------------------------------------------------------------------
-// Additional implementation, exposed to the caller as separate proc macros
-
-pub struct MatrixRowColInput {
-    /// The matrix we're implementing the `from_cols` or `from_rows` on.
-    matrix: Path,
-    /// The type that the vector and matrix both contain.
-    inner_type: Type,
-    num_rows: usize,
-    num_cols: usize,
-}
-
-impl Parse for MatrixRowColInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Matrix name,
-        let matrix = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        // Vector name,
-        let inner_type = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        let num_rows = input.parse::<LitInt>()?.base10_parse()?;
-        input.parse::<Token![,]>()?;
-
-        let num_cols = input.parse::<LitInt>()?.base10_parse()?;
-
-        Ok(Self {
-            matrix,
-            inner_type,
-            num_rows,
-            num_cols,
-        })
-    }
-}
+// Additional implementations
 
 
-pub fn impl_col_conversions(input: &MatrixRowColInput) -> TokenStream {
-    let MatrixRowColInput {
-        matrix,
-        inner_type,
+pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, inner_type },
         num_rows,
         num_cols,
     } = input;
 
-    let num_rows = *num_rows;
-    let num_cols = *num_cols;
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &struct_name.into(),
+            rhs_type: &inner_type.into(),
+            lhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            rhs_indexer: None,
+            constructor_arg_count: num_rows * num_cols,
+        },
+        &[common::BinaryOperator::Multiplication, common::BinaryOperator::Division],
+    )
+}
+
+
+pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, .. },
+        num_rows,
+        num_cols,
+    } = input;
+
+    let self_type = struct_name.into();
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &self_type,
+            rhs_type: &self_type,
+            lhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            rhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            constructor_arg_count: num_rows * num_cols,
+        },
+        &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
+    )
+}
+
+
+pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, inner_type },
+        num_rows,
+        num_cols,
+    } = input;
+
+    // -------------------------------------------------
+    // Cols
 
     // c0 -> c{n}
     let param_names: Vec<Ident> = (0..num_cols).map(|c| Ident::new(&format!("c{c}"), Span::call_site())).collect();
 
-    quote! {
-        impl #matrix {
-            #[doc="Converts multiple columns into a single matrix."]
-            #[doc=""]
-            #[doc="Performing this conversion with vectors is essentially free. Since vectors are thin wrappers around"]
-            #[doc="arrays and already represent column vectors, the vectors can be arranged in memory as-is, one after"]
-            #[doc="the other."]
-            pub fn from_cols<C>( #(#param_names: C),* ) -> Self
-            where
-                C: ::core::convert::Into<[#inner_type; #num_rows]>
-            {
-                Self::from([ #(#param_names.into()),* ])
-            }
+    let cols = quote! {
+        #[doc="Converts multiple columns into a single matrix."]
+        #[doc=""]
+        #[doc="Performing this conversion with vectors is essentially free. Since vectors are thin wrappers around"]
+        #[doc="arrays and already represent column vectors, the vectors can be arranged in memory as-is, one after"]
+        #[doc="the other."]
+        pub fn from_cols<C>( #(#param_names: C),* ) -> Self
+        where
+            C: ::core::convert::Into<[#inner_type; #num_rows]>
+        {
+            Self::from([ #(#param_names.into()),* ])
         }
-    }
-}
+    };
 
-pub fn impl_row_conversions(input: &MatrixRowColInput) -> TokenStream {
-    let MatrixRowColInput {
-        matrix,
-        inner_type,
-        num_rows,
-        num_cols,
-    } = input;
-
-    let num_rows = *num_rows;
-    let num_cols = *num_cols;
+    // -------------------------------------------------
+    // Rows
 
     // This one is a bit less straightforward than `from_cols`. We can't just slot the vectors into place, since the
     // elements of a row do not lie next to one another in memory. Instead, we want a column made up of element 0 of
@@ -256,20 +284,25 @@ pub fn impl_row_conversions(input: &MatrixRowColInput) -> TokenStream {
             .map(move |row_ident| -> Expr { parse_quote!(#row_ident[#col]) })
     });
 
+    let rows = quote! {
+        #[doc="Converts multiple rows into a single matrix."]
+        #[doc=""]
+        #[doc="Because matrices are stored in column-major order, this operation cannot be done \"freely\" like"]
+        #[doc="[`from_cols`][Self::from_cols] can. Each element must be copied into its place."]
+        pub fn from_rows<R>( #(#param_names: R),* ) -> Self
+        where
+            R: ::core::convert::Into<[#inner_type; #num_cols]>
+        {
+            // We need to convert all of our parameter names first so that we can index them
+            #( let #param_names = #param_names.into(); )*
+            Self::new( #(#params_indexed),* )
+        }
+    };
+
     quote! {
-        impl #matrix {
-            #[doc="Converts multiple rows into a single matrix."]
-            #[doc=""]
-            #[doc="Because matrices are stored in column-major order, this operation cannot be done \"freely\" like"]
-            #[doc="[`from_cols`] can. Each element must be copied into its place."]
-            pub fn from_rows<R>( #(#param_names: R),* ) -> Self
-            where
-                R: ::core::convert::Into<[#inner_type; #num_cols]>
-            {
-                // We need to convert all of our parameter names first so that we can index them
-                #( let #param_names = #param_names.into(); )*
-                Self::new( #(#params_indexed),* )
-            }
+        impl #struct_name {
+            #rows
+            #cols
         }
     }
 }

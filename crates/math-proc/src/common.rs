@@ -1,16 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{BinOp, ExprIndex, Generics, Ident, Member, Path, Token, Type, Visibility};
+use syn::{parse_quote, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility};
 
 
-pub struct BaseInput {
+pub struct BaseCreationInput {
     pub struct_vis: Visibility,
     pub struct_name: Ident,
     pub inner_type: Type,
 }
 
-impl Parse for BaseInput {
+impl Parse for BaseCreationInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // All visibility modifiers start with pub, and are then optionally followed by `(...)`. If there is no modifier
         // present, the struct has inherited visibility.
@@ -32,80 +32,136 @@ impl Parse for BaseInput {
     }
 }
 
+pub struct BaseSimpleInput {
+    pub struct_name: TypePath,
+    pub inner_type: Type,
+}
+
+impl Parse for BaseSimpleInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let struct_name = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let inner_type = input.parse()?;
+
+        Ok(Self { struct_name, inner_type })
+    }
+}
+
+
 // ---------------------------------------------------------------------------------------------------------------------
 
-/// Implements [`Mul`][std::ops::Mul] and [`Div`][std::ops::Div] between matrices/vectors and their contained scalar
-/// type as component-wise operations for the given input parameters.
-///
-/// - `num_args` is the number of arguments this object's constructor takes.
-/// - `indexer` is a function that should return an expression providing an index into the container at a given point.
-pub fn impl_scalar_ops<I, F>(input: I, num_args: usize, mut indexer: F) -> TokenStream
-where
-    I: AsRef<BaseInput>,
-    F: FnMut(usize) -> ExprIndex,
-{
-    use syn::parse_quote as pq;
-    let BaseInput { struct_name, inner_type, .. } = input.as_ref();
+/// One component-wise operator to be implemented.
+#[derive(Copy, Clone)]
+pub enum BinaryOperator {
+    Addition,
+    Subtraction,
+    Multiplication,
+    Division,
+}
 
+impl BinaryOperator {
+    /// Gets the pieces needed to write out this operator's trait implementation.
+    ///
+    /// - The trait name (`::core::ops::Add`)
+    /// - The trait's function (`add`)
+    /// - The actual binary operator to apply to the LHS and RHS (`+`)
     #[rustfmt::skip]
-    let operators: [(Path, Ident, BinOp); 2] = [
-        (pq!{ ::core::ops::Mul }, pq!{ mul }, pq!{ * }),
-        (pq!{ ::core::ops::Div }, pq!{ div }, pq!{ / }),
-    ];
+    pub fn to_pieces(&self) -> (Path, Ident, BinOp) {
+        use syn::parse_quote as pq;
+        match self {
+            Self::Addition          => (pq! { ::core::ops::Add }, pq! { add }, pq! { + }),
+            Self::Subtraction       => (pq! { ::core::ops::Sub }, pq! { sub }, pq! { - }),
+            Self::Multiplication    => (pq! { ::core::ops::Mul }, pq! { mul }, pq! { * }),
+            Self::Division          => (pq! { ::core::ops::Div }, pq! { div }, pq! { / }),
+        }
+    }
+}
+
+
+/// Settings for implementation of component-wise operations.
+///
+/// Using a reference type for the LHS- or RHS-type parameters will result in operators being implemented for `&T` and
+/// `&&T` instead of `T` and `&T`.
+pub struct CWOperatorSettings<'a> {
+    pub lhs_type: &'a Type,
+    pub rhs_type: &'a Type,
+    pub lhs_indexer: Option<&'a dyn Fn(&Ident, usize) -> Expr>,
+    pub rhs_indexer: Option<&'a dyn Fn(&Ident, usize) -> Expr>,
+    pub constructor_arg_count: usize,
+}
+
+
+/// Uses [`CWOperatorSettings`] to implement component-wise (CW) operations between one structure and another. Can be
+/// used either for Vec->f32 or Vec->Vec and similar. Does **not** implement the opposing (f32->Vec) operator in
+/// non-symmetric cases.
+pub fn impl_cw_ops(settings: CWOperatorSettings, operators: &[BinaryOperator]) -> TokenStream {
+    use syn::parse_quote as pq;
+
+    let CWOperatorSettings {
+        lhs_type: lhs_base_type,
+        rhs_type: rhs_base_type,
+        lhs_indexer,
+        rhs_indexer,
+        constructor_arg_count,
+    } = settings;
 
     /*
-     * For each operator, we need one `impl` for of these configurations:
+     * For each operator, we need one `impl` for of these configurations (using Vec+f32 as an example):
      * 1. Vec + f32        2. &Vec + f32      3. Vec + &f32      4. &Vec + &f32
      *
      * Which means we need several different configurations of lifetimes and reference vs. non-reference types.
      */
     #[rustfmt::skip]
-    let operator_configs: [(Generics, Type, Type); 4] = [
-        (pq!{ <      > }, pq!{     #struct_name }, pq!{     #inner_type }),
-        (pq!{ <'a    > }, pq!{ &'a #struct_name }, pq!{     #inner_type }),
-        (pq!{ <    'b> }, pq!{     #struct_name }, pq!{ &'b #inner_type }),
-        (pq!{ <'a, 'b> }, pq!{ &'a #struct_name }, pq!{ &'b #inner_type }),
+    let impl_configs: [(Generics, Type, Type); 4] = [
+        (pq!{ <      > }, pq!{     #lhs_base_type }, pq!{     #rhs_base_type }),
+        (pq!{ <'a    > }, pq!{ &'a #lhs_base_type }, pq!{     #rhs_base_type }),
+        (pq!{ <    'b> }, pq!{     #lhs_base_type }, pq!{ &'b #rhs_base_type }),
+        (pq!{ <'a, 'b> }, pq!{ &'a #lhs_base_type }, pq!{ &'b #rhs_base_type }),
     ];
 
+    let operators = operators.iter().map(|o| o.to_pieces());
     let mut output = TokenStream::new();
 
-    for (trait_path, operator_func, operator_token) in &operators {
-        for (trait_bounds, lhs_type, rhs_type) in &operator_configs {
-            // All of these operators involve constructing a new vector with updated values inside; we can just call
-            // `Self::new` with varying arguments.
-            let new_args = (0..num_args).map(|n| {
-                let indexed = indexer(n);
-                quote! { #indexed #operator_token rhs }
+    let lhs_ident = parse_quote! { lhs };
+    let rhs_ident = parse_quote! { rhs };
+
+    for (op_trait, op_func, op_op) in operators {
+        for (op_bounds, lhs_type, rhs_type) in &impl_configs {
+            let constructor_args = (0..constructor_arg_count).map(|n| {
+                let lhs_expr = lhs_indexer
+                    .as_ref()
+                    .map(|f| f(&lhs_ident, n))
+                    .unwrap_or_else(|| parse_quote! { #lhs_ident });
+                let rhs_expr = rhs_indexer
+                    .as_ref()
+                    .map(|f| f(&rhs_ident, n))
+                    .unwrap_or_else(|| parse_quote! { #rhs_ident });
+                quote! { #lhs_expr #op_op #rhs_expr }
             });
 
-            let op_impl = quote! {
-                impl #trait_bounds #trait_path<#rhs_type> for #lhs_type {
-                    type Output = #struct_name;
+            output.extend(quote! {
+                impl #op_bounds #op_trait<#rhs_type> for #lhs_type {
+                    type Output = #lhs_base_type;
 
-                    fn #operator_func(self, rhs: #rhs_type) -> Self::Output {
-                        <#struct_name>::new( #(#new_args),* )
+                    fn #op_func(self, rhs: #rhs_type) -> Self::Output {
+                        let lhs = self;
+                        <#lhs_base_type>::new( #(#constructor_args),* )
                     }
                 }
-            };
-
-            output.extend(op_impl);
+            });
         }
     }
 
     output
 }
 
+
 /// Creates all sorts of conversions that allow the vector or matrix to be converted back and forth from the type it
 /// contains.
 ///
 /// - `wrapped_type` is the entire type that the vector or matrix contains (`[f32; 2]` instead of `f32`).
 /// - `member_name` is the name of that container as a member of the vector or matrix (`.m` or `.data`, for example).
-pub fn impl_container_conversions<I>(input: I, wrapped_type: &Type, member_name: &Member) -> TokenStream
-where
-    I: AsRef<BaseInput>,
-{
-    let BaseInput { struct_name, .. } = input.as_ref();
-
+pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, member_name: &Member) -> TokenStream {
     quote! {
         // - `&Vec3` as `&[f32; 3]`
         // - `&Mat4` as `&[[f32; 4]; 4]`

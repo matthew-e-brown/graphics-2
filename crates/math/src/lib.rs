@@ -26,6 +26,14 @@ pub mod vec {
     math_proc::create_vector!(pub struct Vec2, f32, 2);
     math_proc::create_vector!(pub struct Vec3, f32, 3);
     math_proc::create_vector!(pub struct Vec4, f32, 4);
+
+    math_proc::vector_impl_scalar_ops!(Vec2, f32, 2);
+    math_proc::vector_impl_scalar_ops!(Vec3, f32, 3);
+    math_proc::vector_impl_scalar_ops!(Vec4, f32, 4);
+
+    math_proc::vector_impl_self_ops!(Vec2, f32, 2);
+    math_proc::vector_impl_self_ops!(Vec3, f32, 3);
+    math_proc::vector_impl_self_ops!(Vec4, f32, 4);
 }
 
 /// Matrices.
@@ -36,9 +44,17 @@ pub mod mat {
     math_proc::create_matrix!(pub struct Mat3, f32, 3, 3);
     math_proc::create_matrix!(pub struct Mat4, f32, 4, 4);
 
-    math_proc::impl_from_rows_and_cols!(Mat2, f32, 2, 2);
-    math_proc::impl_from_rows_and_cols!(Mat3, f32, 3, 3);
-    math_proc::impl_from_rows_and_cols!(Mat4, f32, 4, 4);
+    math_proc::matrix_impl_scalar_ops!(Mat2, f32, 2, 2);
+    math_proc::matrix_impl_scalar_ops!(Mat3, f32, 3, 3);
+    math_proc::matrix_impl_scalar_ops!(Mat4, f32, 4, 4);
+
+    math_proc::matrix_impl_self_ops!(Mat2, f32, 2, 2);
+    math_proc::matrix_impl_self_ops!(Mat3, f32, 3, 3);
+    math_proc::matrix_impl_self_ops!(Mat4, f32, 4, 4);
+
+    math_proc::matrix_impl_row_col_conversions!(Mat2, f32, 2, 2);
+    math_proc::matrix_impl_row_col_conversions!(Mat3, f32, 3, 3);
+    math_proc::matrix_impl_row_col_conversions!(Mat4, f32, 4, 4);
 }
 
 pub use mat::*;

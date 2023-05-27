@@ -6,37 +6,53 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{parse_quote, Ident, LitInt, Token};
 
-use crate::common::{self, BaseInput};
+use crate::common::{self, BaseCreationInput, BaseSimpleInput};
 
-pub struct VectorInput {
-    pub base: BaseInput,
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Structs for macro input
+
+
+fn parse_vector_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize)> {
+    let base = input.parse()?;
+    input.parse::<Token![,]>()?;
+    let num_elements = input.parse::<LitInt>()?.base10_parse()?;
+
+    Ok((base, num_elements))
+}
+
+pub struct CreationInput {
+    pub base: BaseCreationInput,
     pub num_elements: usize,
 }
 
-impl Parse for VectorInput {
+impl Parse for CreationInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // After base input, we want another comma
-        let base = input.parse()?;
-        input.parse::<Token![,]>()?;
-
-        // Then just the number of elements
-        let num_elements = input.parse::<LitInt>()?.base10_parse()?;
-
+        let (base, num_elements) = parse_vector_input(input)?;
         Ok(Self { base, num_elements })
     }
 }
 
-impl AsRef<BaseInput> for VectorInput {
-    fn as_ref(&self) -> &BaseInput {
-        &self.base
+pub struct SimpleInput {
+    pub base: BaseSimpleInput,
+    pub num_elements: usize,
+}
+
+impl Parse for SimpleInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let (base, num_elements) = parse_vector_input::<BaseSimpleInput>(input)?;
+        Ok(Self { base, num_elements })
     }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
 
-pub fn vector_base(input: VectorInput) -> TokenStream {
-    let VectorInput {
-        base: BaseInput {
+// ---------------------------------------------------------------------------------------------------------------------
+// Base implementation
+
+
+pub fn create_base(input: CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput {
             struct_vis,
             struct_name,
             inner_type,
@@ -60,21 +76,21 @@ pub fn vector_base(input: VectorInput) -> TokenStream {
         }
     };
 
+    // These features are always available on all vectors
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
-    output.extend(common::impl_scalar_ops(&input, input.num_elements, |n| parse_quote!(self[#n])));
     output.extend(common::impl_container_conversions(
-        &input,
-        &parse_quote! { [#inner_type; #num_elements] },
+        struct_name,
+        &parse_quote!([#inner_type; #num_elements]),
         &parse_quote!(v),
     ));
 
     output
 }
 
-fn impl_indexing(input: &VectorInput) -> TokenStream {
-    let VectorInput {
-        base: BaseInput { struct_name, inner_type, .. },
+fn impl_indexing(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
         ..
     } = input;
 
@@ -95,9 +111,9 @@ fn impl_indexing(input: &VectorInput) -> TokenStream {
     }
 }
 
-fn impl_constructor(input: &VectorInput) -> TokenStream {
-    let VectorInput {
-        base: BaseInput { struct_name, inner_type, .. },
+fn impl_constructor(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
         num_elements,
     } = input;
     let num_args = *num_elements;
@@ -125,4 +141,47 @@ fn impl_constructor(input: &VectorInput) -> TokenStream {
             }
         }
     }
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Additional implementations
+
+
+pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, inner_type },
+        num_elements,
+    } = input;
+
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &struct_name.into(),
+            rhs_type: &inner_type.into(),
+            lhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
+            rhs_indexer: None,
+            constructor_arg_count: num_elements,
+        },
+        &[common::BinaryOperator::Multiplication, common::BinaryOperator::Division],
+    )
+}
+
+
+pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, .. },
+        num_elements,
+    } = input;
+
+    let self_type = struct_name.into();
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &self_type,
+            rhs_type: &self_type,
+            lhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
+            rhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
+            constructor_arg_count: num_elements,
+        },
+        &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
+    )
 }

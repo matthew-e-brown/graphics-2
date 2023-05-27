@@ -11,9 +11,6 @@ mod vector;
 
 use syn::parse_macro_input;
 
-use crate::matrix::{matrix_base, MatrixInput, MatrixRowColInput};
-use crate::vector::{vector_base, VectorInput};
-
 /// Creates a vector struct.
 ///
 /// # Syntax
@@ -41,10 +38,29 @@ use crate::vector::{vector_base, VectorInput};
 /// alongside some base functionality.
 #[proc_macro]
 pub fn create_vector(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as VectorInput);
-    let output = vector_base(input);
+    let input = parse_macro_input!(input as vector::CreationInput);
+    let output = vector::create_base(input);
     output.into()
 }
+
+
+#[proc_macro]
+pub fn vector_impl_scalar_ops(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as vector::SimpleInput);
+    let output = vector::impl_scalar_ops(input);
+    output.into()
+}
+
+
+#[proc_macro]
+pub fn vector_impl_self_ops(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as vector::SimpleInput);
+    let output = vector::impl_self_ops(input);
+    output.into()
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
 
 /// Creates a matrix struct.
 ///
@@ -74,16 +90,31 @@ pub fn create_vector(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 /// alongside some base functionality.
 #[proc_macro]
 pub fn create_matrix(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as MatrixInput);
-    let output = matrix_base(input);
+    let input = parse_macro_input!(input as matrix::CreationInput);
+    let output = matrix::create_base(input);
     output.into()
 }
 
 
 #[proc_macro]
-pub fn impl_from_rows_and_cols(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let input = parse_macro_input!(input as MatrixRowColInput);
-    let mut output = matrix::impl_col_conversions(&input);
-    output.extend(matrix::impl_row_conversions(&input));
+pub fn matrix_impl_row_col_conversions(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as matrix::SimpleInput);
+    let output = matrix::impl_row_col_conversions(input);
+    output.into()
+}
+
+
+#[proc_macro]
+pub fn matrix_impl_scalar_ops(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as matrix::SimpleInput);
+    let output = matrix::impl_scalar_ops(input);
+    output.into()
+}
+
+
+#[proc_macro]
+pub fn matrix_impl_self_ops(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as matrix::SimpleInput);
+    let output = matrix::impl_self_ops(input);
     output.into()
 }
