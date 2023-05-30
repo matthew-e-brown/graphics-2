@@ -21,7 +21,7 @@ math_proc::matrix_impl_row_col_conversions!(Mat4, f32, 4, 4);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::*;
 
     #[test]
     #[rustfmt::skip]
@@ -62,5 +62,29 @@ mod tests {
         assert_eq!(a2.m, b2.m);
         assert_eq!(a3.m, b3.m);
         assert_eq!(a4.m, b4.m);
+    }
+
+
+    #[test]
+    fn from_vectors() {
+        let v = Vec2::new(1.0, 2.0);
+        let w = Vec2::new(3.0, 4.0);
+
+        let a = Mat2::from_cols(v, w);
+        assert_eq!(a.m, [[1.0, 2.0], [3.0, 4.0]]);
+
+        let v = Vec4::new( 10.,  20.,  30.,  40.);
+        let w = Vec4::new( 50.,  60.,  70.,  80.);
+        let s = Vec4::new( 90., 100., 110., 120.);
+        let t = Vec4::new(130., 140., 150., 160.);
+
+        let a = Mat4::from_rows(v, w, s, t);
+        #[rustfmt::skip]
+        assert_eq!(a.m, [
+            [10., 50.,  90., 130.],
+            [20., 60., 100., 140.],
+            [30., 70., 110., 150.],
+            [40., 80., 120., 160.],
+        ]);
     }
 }

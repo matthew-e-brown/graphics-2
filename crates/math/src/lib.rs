@@ -20,8 +20,8 @@
 //! `Vec3` can be created from three values using `Vec3::from([ a, b, c ])`.
 
 
-pub mod vec;
 pub mod mat;
+pub mod vec;
 
 pub use mat::*;
 pub use vec::*;

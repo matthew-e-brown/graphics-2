@@ -24,6 +24,7 @@ use syn::parse_macro_input;
 /// ## Example
 ///
 /// ```
+/// # use math_proc::create_vector;
 /// create_vector!(pub(crate) struct IVec5, i32, 5);
 /// ```
 ///
@@ -76,6 +77,7 @@ pub fn vector_impl_self_ops(input: proc_macro::TokenStream) -> proc_macro::Token
 /// ## Example
 ///
 /// ```
+/// # use math_proc::create_matrix;
 /// create_matrix!(pub struct DMat16x23, f64, 16, 23);
 /// ```
 ///

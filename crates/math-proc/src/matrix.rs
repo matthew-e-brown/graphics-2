@@ -146,11 +146,15 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
     let num_rows = *num_rows;
     let num_cols = *num_cols;
 
+    // If either of our dimensions is greater than 9, separate the two with underscores (so that, for example, we get
+    // 11_1 and 1_11 instead of 111 and 111, which would conflict).
+    let sep = if num_rows > 9 || num_cols > 9 { "_" } else { "" };
+
     let param_types = std::iter::repeat(inner_type);
-    let param_names: Vec<Vec<Ident>> = (0..num_rows)
+    let param_names: Vec<Vec<Ident>> = (1..=num_rows)
         .map(|r| {
-            (0..num_cols)
-                .map(move |c| Ident::new(&format!("m{r}{c}"), Span::call_site()))
+            (1..=num_cols)
+                .map(move |c| Ident::new(&format!("m_{r}{sep}{c}"), Span::call_site()))
                 .collect()
         })
         .collect();
@@ -170,12 +174,12 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
         array_of_cols.elems.push(Expr::Array(col));
     }
 
-    // For a 3x3 matrix, `cols[0]` would look like the expression `[ m00, m10, m20 ]`.
+    // For a 3x3 matrix, `cols[0]` would look like the expression `[ m11, m21, m31 ]`.
 
     // Flatten our list of parameters from the 2D array we used to index correctly into one in order
     let param_names = param_names.iter().flat_map(|inner| inner.iter());
 
-    // For a 3x3 matrix, the entire method body would just be `Self { m: [ [m0, m3, m6], [m1, m4, m7], [m2, m5, m8] ] }`
+    // For a 3x3 matrix, the entire method body would just be `Self { m: [arrays] }`
     quote! {
         impl #struct_name {
             #[doc="Creates a new matrix."]
@@ -260,7 +264,7 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
     // c0 -> c{n}
     let param_names: Vec<Ident> = (0..num_cols).map(|c| Ident::new(&format!("c{c}"), Span::call_site())).collect();
 
-    let cols = quote! {
+    let from_cols = quote! {
         #[doc="Converts multiple columns into a single matrix."]
         #[doc=""]
         #[doc="Performing this conversion with vectors is essentially free. Since vectors are thin wrappers around"]
@@ -283,14 +287,12 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
 
     // r0 -> r{n}
     let param_names: Vec<Ident> = (0..num_rows).map(|r| Ident::new(&format!("r{r}"), Span::call_site())).collect();
-    // For each column, index each of our rows once
-    let params_indexed = (0..num_cols).flat_map(|col| {
-        param_names
-            .iter()
-            .map(move |row_ident| -> Expr { parse_quote!(#row_ident[#col]) })
-    });
+    // For each row, get all the column values (since Mat::new takes row-major arguments)
+    let params_indexed = param_names
+        .iter()
+        .flat_map(|row_ident| (0..num_cols).map(move |col| -> Expr { parse_quote!(#row_ident[#col]) }));
 
-    let rows = quote! {
+    let from_rows = quote! {
         #[doc="Converts multiple rows into a single matrix."]
         #[doc=""]
         #[doc="Because matrices are stored in column-major order, this operation cannot be done \"freely\" like"]
@@ -307,8 +309,8 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
 
     quote! {
         impl #struct_name {
-            #rows
-            #cols
+            #from_rows
+            #from_cols
         }
     }
 }
