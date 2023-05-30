@@ -157,9 +157,9 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
 
     // Loop through the range of our (i, j) indices and build a 2D array of all of those parameter names
     let mut array_of_cols: ExprArray = parse_quote!([]);
+
     for c in 0..num_cols {
-        // Since we're storing column-major, we want an array of columns; each column is made up of one value from each
-        // row.
+        // Each `col` is made up of one element from each row
         let mut col: ExprArray = parse_quote!([]);
         for r in 0..num_rows {
             let param_name = &param_names[r][c];
@@ -180,7 +180,8 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
         impl #struct_name {
             #[doc="Creates a new matrix."]
             #[doc=""]
-            #[doc="Parameters should be given in column-major order."]
+            #[doc="Parameters should be given in **row-major order**. This is so that construction of matrices, when"]
+            #[doc="laid out over multiple lines, lines up with their mathematical representation."]
             pub fn new(#(#param_names: #param_types),*) -> Self {
                 Self {
                     m: #array_of_cols
