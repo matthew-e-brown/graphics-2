@@ -2,9 +2,23 @@
 //!
 //! See [the crate-level documentation](self) for general details that pertain to all data structures in the crate.
 
-math_proc::create_matrix!(pub struct Mat2, f32, 2, 2);
-math_proc::create_matrix!(pub struct Mat3, f32, 3, 3);
-math_proc::create_matrix!(pub struct Mat4, f32, 4, 4);
+math_proc::create_matrix! {
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    pub struct Mat2;
+    f32, 2, 2;
+}
+
+math_proc::create_matrix! {
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    pub struct Mat3;
+    f32, 3, 3;
+}
+
+math_proc::create_matrix! {
+    #[derive(Copy, Clone, Debug, PartialEq)]
+    pub struct Mat4;
+    f32, 4, 4;
+}
 
 math_proc::matrix_impl_scalar_ops!(Mat2, f32, 2, 2);
 math_proc::matrix_impl_scalar_ops!(Mat3, f32, 3, 3);

@@ -15,8 +15,9 @@ use syn::parse_macro_input;
 ///
 /// # Syntax
 ///
-/// This macro takes three arguments:
+/// This macro takes three or four arguments:
 ///
+/// - Optionally, some attributes to apply to the struct;
 /// - The struct's declaration "header" (`[visibility] struct <name>`);
 /// - What type it should contain (any scalar type should work); and
 /// - How many elements it should have (a [`usize`] literal).
@@ -25,12 +26,17 @@ use syn::parse_macro_input;
 ///
 /// ```
 /// # use math_proc::create_vector;
-/// create_vector!(pub(crate) struct IVec5, i32, 5);
+/// create_vector! {
+///     #[derive(Copy, Clone, Debug)]
+///     pub(crate) struct IVec5;
+///     i32, 5;
+/// }
 /// ```
 ///
 /// This will create:
 ///
 /// ```
+/// #[derive(Copy, Clone, Debug)]
 /// pub(crate) struct IVec5 {
 ///     v: [i32; 5],
 /// }
@@ -67,9 +73,9 @@ pub fn vector_impl_self_ops(input: proc_macro::TokenStream) -> proc_macro::Token
 ///
 /// # Syntax
 ///
-/// This macro takes four arguments:
+/// This macro takes four or five arguments:
 ///
-/// - The struct's declaration (`[visibility] struct <name>`);
+/// - Optionally, some attributes to apply to the struct;
 /// - What type it should contain, ([`f32`] and [`f64`] are the only two guaranteed to work);
 /// - How many rows it should have (a [`usize`] literal); and
 /// - How many columns it should have.
@@ -78,12 +84,17 @@ pub fn vector_impl_self_ops(input: proc_macro::TokenStream) -> proc_macro::Token
 ///
 /// ```
 /// # use math_proc::create_matrix;
-/// create_matrix!(pub struct DMat16x23, f64, 16, 23);
+/// create_matrix! {
+///     #[derive(Copy, Clone, Debug)]
+///     pub struct DMat16x23;
+///     f64, 16, 23;
+/// }
 /// ```
 ///
 /// This will create:
 ///
 /// ```
+/// #[derive(Copy, Clone, Debug)]
 /// pub struct DMat16x23 {
 ///     m: [[f64; 16]; 23],
 /// }

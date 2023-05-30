@@ -19,6 +19,9 @@ fn parse_vector_input<T: Parse>(input: ParseStream) -> syn::Result<(T, usize)> {
     input.parse::<Token![,]>()?;
     let num_elements = input.parse::<LitInt>()?.base10_parse()?;
 
+    // Parse a semicolon optionally for the last parameter
+    let _ = input.parse::<Token![;]>();
+
     Ok((base, num_elements))
 }
 
@@ -56,6 +59,7 @@ impl Parse for SimpleInput {
 pub fn create_base(input: CreationInput) -> TokenStream {
     let CreationInput {
         base: BaseCreationInput {
+            attributes,
             struct_vis,
             struct_name,
             inner_type,
@@ -74,7 +78,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=#doc]
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
-        #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug)]
+        #(#attributes)*
         #struct_vis struct #struct_name {
             v: [#inner_type; #num_elements],
         }

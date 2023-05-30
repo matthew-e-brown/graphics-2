@@ -1,13 +1,14 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_quote, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility};
+use syn::{parse_quote, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility, Attribute};
 
 
 /// The inputs required for the creation of any struct through a macro. Extended by both [`matrix`] and [`vector`]
 /// modules. At the very least, we need to know how public to make the struct, what it should be called, and what type
 /// it should hold.
 pub struct BaseCreationInput {
+    pub attributes: Vec<Attribute>,
     pub struct_vis: Visibility,
     pub struct_name: Ident,
     pub inner_type: Type,
@@ -15,19 +16,24 @@ pub struct BaseCreationInput {
 
 impl Parse for BaseCreationInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // All visibility modifiers start with pub, and are then optionally followed by `(...)`. If there is no modifier
-        // present, the struct has inherited visibility.
-        let struct_vis = if input.peek(Token![pub]) { input.parse()? } else { Visibility::Inherited };
+        // Parse as many attributes as we can
+        let attributes = input.call(Attribute::parse_outer).unwrap_or_default();
+
+        // Parse the `pub(...)` if there; otherwise, just inherit visibility
+        let struct_vis = input.parse().unwrap_or(Visibility::Inherited);
 
         // Struct keyword, then struct name
         input.parse::<Token![struct]>()?;
         let struct_name = input.parse()?;
 
-        // Comma, then inner type
-        input.parse::<Token![,]>()?;
+        // Semicolon separates "parameters" from the base
+        input.parse::<Token![;]>()?;
+
+        // Then inner type
         let inner_type = input.parse()?;
 
         Ok(Self {
+            attributes,
             struct_vis,
             struct_name,
             inner_type,

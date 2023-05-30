@@ -21,6 +21,9 @@ fn parse_matrix_input<T: Parse>(input: ParseStream) -> syn::Result<(T, usize, us
     input.parse::<Token![,]>()?;
     let num_cols = input.parse::<LitInt>()?.base10_parse()?;
 
+    // Parse a semicolon optionally for the last parameter
+    let _ = input.parse::<Token![;]>();
+
     Ok((base, num_rows, num_cols))
 }
 
@@ -73,6 +76,7 @@ fn index_1d_to_2d(idx: usize, num_rows: usize, num_cols: usize) -> (usize, usize
 pub fn create_base(input: CreationInput) -> TokenStream {
     let CreationInput {
         base: BaseCreationInput {
+            attributes,
             struct_vis,
             struct_name,
             inner_type,
@@ -92,7 +96,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=#doc]
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
-        #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug)]
+        #(#attributes)*
         #struct_vis struct #struct_name {
             // We want rows; cols. That gives us an array of columns, each containing one value for each row. This means
             // that to index the matrix using the mathematical convention of `M_rc` (row first), we need to index
