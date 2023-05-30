@@ -13,7 +13,8 @@ use crate::common::{self, BaseCreationInput, BaseSimpleInput};
 // Structs for macro input
 
 
-fn parse_vector_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize)> {
+/// Parses base macro input (be it [`BaseCreationInput`] or [`BaseSimpleInput`]), followed by a number of elements.
+fn parse_vector_input<T: Parse>(input: ParseStream) -> syn::Result<(T, usize)> {
     let base = input.parse()?;
     input.parse::<Token![,]>()?;
     let num_elements = input.parse::<LitInt>()?.base10_parse()?;
@@ -21,6 +22,7 @@ fn parse_vector_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize)> {
     Ok((base, num_elements))
 }
 
+/// Input required to create an instance of a vector.
 pub struct CreationInput {
     pub base: BaseCreationInput,
     pub num_elements: usize,
@@ -33,6 +35,7 @@ impl Parse for CreationInput {
     }
 }
 
+/// Input required for most other vector extension macros.
 pub struct SimpleInput {
     pub base: BaseSimpleInput,
     pub num_elements: usize,
@@ -71,6 +74,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=#doc]
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
+        #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug)]
         #struct_vis struct #struct_name {
             v: [#inner_type; #num_elements],
         }
@@ -160,9 +164,10 @@ pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
             rhs_type: &inner_type.into(),
             lhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
             rhs_indexer: None,
-            constructor_arg_count: num_elements,
+            total_elements: num_elements,
         },
-        &[common::BinaryOperator::Multiplication, common::BinaryOperator::Division],
+        &[common::BinaryOperator::Division],
+        &[common::BinaryOperator::Multiplication], // vec*f32 and f32*vec
     )
 }
 
@@ -180,8 +185,9 @@ pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
             rhs_type: &self_type,
             lhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
             rhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
-            constructor_arg_count: num_elements,
+            total_elements: num_elements,
         },
         &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
+        &[], // self-ops are always commutative for free (vec + vec is the same as vec + vec)
     )
 }

@@ -4,6 +4,9 @@ use syn::parse::{Parse, ParseStream};
 use syn::{parse_quote, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility};
 
 
+/// The inputs required for the creation of any struct through a macro. Extended by both [`matrix`] and [`vector`]
+/// modules. At the very least, we need to know how public to make the struct, what it should be called, and what type
+/// it should hold.
 pub struct BaseCreationInput {
     pub struct_vis: Visibility,
     pub struct_name: Ident,
@@ -32,6 +35,9 @@ impl Parse for BaseCreationInput {
     }
 }
 
+
+/// The inputs required for extending any macro that was created by [`BaseCreationInput`]. At the very least, we always
+/// need to know the name of the struct to extend and the type that it contains.
 pub struct BaseSimpleInput {
     pub struct_name: TypePath,
     pub inner_type: Type,
@@ -75,6 +81,18 @@ impl BinaryOperator {
             Self::Division          => (pq! { ::core::ops::Div }, pq! { div }, pq! { / }),
         }
     }
+
+    /// The same as [`to_pieces`][Self::to_pieces], but for assignment operators (`+=`).
+    #[rustfmt::skip]
+    pub fn to_assignment_pieces(&self) -> (Path, Ident, BinOp) {
+        use syn::parse_quote as pq;
+        match self {
+            Self::Addition          => (pq! { ::core::ops::AddAssign }, pq! { add_assign }, pq! { += }),
+            Self::Subtraction       => (pq! { ::core::ops::SubAssign }, pq! { sub_assign }, pq! { -= }),
+            Self::Multiplication    => (pq! { ::core::ops::MulAssign }, pq! { mul_assign }, pq! { *= }),
+            Self::Division          => (pq! { ::core::ops::DivAssign }, pq! { div_assign }, pq! { /= }),
+        }
+    }
 }
 
 
@@ -87,14 +105,21 @@ pub struct CWOperatorSettings<'a> {
     pub rhs_type: &'a Type,
     pub lhs_indexer: Option<&'a dyn Fn(&Ident, usize) -> Expr>,
     pub rhs_indexer: Option<&'a dyn Fn(&Ident, usize) -> Expr>,
-    pub constructor_arg_count: usize,
+    pub total_elements: usize,
+    // /// Whether or not to use the RHS type as the output for the given operator traits. Setting this to true also
+    // /// disables creating assignment traits (e.g., [`MulAssign`][core::ops::MulAssign]), because the RHS type cannot be
+    // /// assigned directly to the LHS, which is how assignments are done.
+    // pub use_rhs_as_output: bool,
 }
 
 
 /// Uses [`CWOperatorSettings`] to implement component-wise (CW) operations between one structure and another. Can be
-/// used either for Vec->f32 or Vec->Vec and similar. Does **not** implement the opposing (f32->Vec) operator in
-/// non-symmetric cases.
-pub fn impl_cw_ops(settings: CWOperatorSettings, operators: &[BinaryOperator]) -> TokenStream {
+/// used either for Vec->f32 or Vec->Vec and similar.
+pub fn impl_cw_ops(
+    settings: CWOperatorSettings,
+    operators_noncommutative: &[BinaryOperator],
+    operators_commutative: &[BinaryOperator],
+) -> TokenStream {
     use syn::parse_quote as pq;
 
     let CWOperatorSettings {
@@ -102,50 +127,110 @@ pub fn impl_cw_ops(settings: CWOperatorSettings, operators: &[BinaryOperator]) -
         rhs_type: rhs_base_type,
         lhs_indexer,
         rhs_indexer,
-        constructor_arg_count,
+        total_elements,
     } = settings;
+
+    let operators_commutative = operators_commutative.iter().map(|op| (true, op));
+    let operators_noncommutative = operators_noncommutative.iter().map(|op| (false, op));
+
+    let operators = operators_commutative.chain(operators_noncommutative);
 
     /*
      * For each operator, we need one `impl` for of these configurations (using Vec+f32 as an example):
-     * 1. Vec + f32        2. &Vec + f32      3. Vec + &f32      4. &Vec + &f32
+     * 1. Vec + f32         2. &Vec + f32           3. Vec + &f32           4. &Vec + &f32
      *
-     * Which means we need several different configurations of lifetimes and reference vs. non-reference types.
+     * Which means we need several different configurations of lifetimes and reference vs. non-reference types. We don't
+     * need to define anything for `mut` references because they automatically coerce into immutable references.
      */
     #[rustfmt::skip]
-    let impl_configs: [(Generics, Type, Type); 4] = [
-        (pq!{ <      > }, pq!{     #lhs_base_type }, pq!{     #rhs_base_type }),
-        (pq!{ <'a    > }, pq!{ &'a #lhs_base_type }, pq!{     #rhs_base_type }),
-        (pq!{ <    'b> }, pq!{     #lhs_base_type }, pq!{ &'b #rhs_base_type }),
-        (pq!{ <'a, 'b> }, pq!{ &'a #lhs_base_type }, pq!{ &'b #rhs_base_type }),
+    let ref_configs: [(Generics, Type, Type); 4] = [
+        (pq! { <      > }, pq! {     #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <'a    > }, pq! { &'a #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <    'b> }, pq! {     #lhs_base_type }, pq! { &'b #rhs_base_type }),
+        (pq! { <'a, 'b> }, pq! { &'a #lhs_base_type }, pq! { &'b #rhs_base_type }),
     ];
 
-    let operators = operators.iter().map(|o| o.to_pieces());
+    /*
+     * For each assignment operator, we need one `impl` for each of the following (again with the same example):
+     * 1. Vec += f32        2. &mut Vec += f32      3. Vec += &f32      4. &mut Vec += &f32
+     *
+     * This is the exact same as the basic operators, but we need mutable references to the LHS.
+     */
+    #[rustfmt::skip]
+    let mut_configs: [(Generics, Type, Type); 4] = [
+        (pq! { <      > }, pq! {         #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <'a    > }, pq! { &'a mut #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <    'b> }, pq! {         #lhs_base_type }, pq! { &'b #rhs_base_type }),
+        (pq! { <'a, 'b> }, pq! { &'a mut #lhs_base_type }, pq! { &'b #rhs_base_type }),
+    ];
+
     let mut output = TokenStream::new();
 
     let lhs_ident = parse_quote! { lhs };
     let rhs_ident = parse_quote! { rhs };
 
-    for (op_trait, op_func, op_op) in operators {
-        for (op_bounds, lhs_type, rhs_type) in &impl_configs {
-            let constructor_args = (0..constructor_arg_count).map(|n| {
-                let lhs_expr = lhs_indexer
-                    .as_ref()
-                    .map(|f| f(&lhs_ident, n))
-                    .unwrap_or_else(|| parse_quote! { #lhs_ident });
-                let rhs_expr = rhs_indexer
-                    .as_ref()
-                    .map(|f| f(&rhs_ident, n))
-                    .unwrap_or_else(|| parse_quote! { #rhs_ident });
-                quote! { #lhs_expr #op_op #rhs_expr }
-            });
+    // Takes the given binary operator and generates a list of `lhs[idx] [op] rhs[idx]` for all components of the
+    // structures.
+    let generate_expressions = |op_op: BinOp| {
+        // Capture identities by reference here, instead of in the inner `move` closure
+        let lhs_ident = &lhs_ident;
+        let rhs_ident = &rhs_ident;
+        (0..total_elements).map(move |n| {
+            let lhs_expr = lhs_indexer
+                .as_ref()
+                .map(|f| f(lhs_ident, n))
+                .unwrap_or_else(|| parse_quote! { #lhs_ident });
+            let rhs_expr = rhs_indexer
+                .as_ref()
+                .map(|f| f(rhs_ident, n))
+                .unwrap_or_else(|| parse_quote! { #rhs_ident });
+            quote! { #lhs_expr #op_op #rhs_expr }
+        })
+    };
 
+    for (is_commutative, operator) in operators {
+        // General operators
+        for (op_bounds, lhs_type, rhs_type) in &ref_configs {
+            let (op_trait, op_func, op_op) = operator.to_pieces();
+            let constructor_args = generate_expressions(op_op).collect::<Vec<_>>();
+
+            // Build a bunch of constructor arguments that all look like `lhs[idx] [op] rhs[idx]`. Then we'll pass all
+            // of those to `LHS::new(...)` at once. They will come out as if written inline.
             output.extend(quote! {
                 impl #op_bounds #op_trait<#rhs_type> for #lhs_type {
                     type Output = #lhs_base_type;
 
-                    fn #op_func(self, rhs: #rhs_type) -> Self::Output {
-                        let lhs = self;
+                    fn #op_func(self, #rhs_ident: #rhs_type) -> Self::Output {
+                        let #lhs_ident = self;
                         <#lhs_base_type>::new( #(#constructor_args),* )
+                    }
+                }
+            });
+
+            if is_commutative {
+                output.extend(quote! {
+                    impl #op_bounds #op_trait<#lhs_type> for #rhs_type {
+                        type Output = #lhs_base_type;
+
+                        fn #op_func(self, #lhs_ident: #lhs_type) -> Self::Output {
+                            let #rhs_ident = self;
+                            <#lhs_base_type>::new( #(#constructor_args),* )
+                        }
+                    }
+                });
+            }
+        }
+
+        // Assignment variants
+        for (op_bounds, lhs_type, rhs_type) in &mut_configs {
+            let (op_trait, op_func, op_op) = operator.to_assignment_pieces();
+            let assignment_statements = generate_expressions(op_op);
+
+            output.extend(quote! {
+                impl #op_bounds #op_trait<#rhs_type> for #lhs_type {
+                    fn #op_func(&mut self, #rhs_ident: #rhs_type) {
+                        let lhs = self;
+                        #(#assignment_statements;)*
                     }
                 }
             });

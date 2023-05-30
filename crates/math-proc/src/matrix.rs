@@ -13,7 +13,8 @@ use crate::common::{self, BaseCreationInput, BaseSimpleInput};
 // Structs for macro input
 
 
-fn parse_matrix_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize, usize)> {
+/// Parses base macro input (be it [`BaseCreationInput`] or [`BaseSimpleInput`]), followed by matrix rows and columns.
+fn parse_matrix_input<T: Parse>(input: ParseStream) -> syn::Result<(T, usize, usize)> {
     let base = input.parse()?;
     input.parse::<Token![,]>()?;
     let num_rows = input.parse::<LitInt>()?.base10_parse()?;
@@ -23,7 +24,8 @@ fn parse_matrix_input<B: Parse>(input: ParseStream) -> syn::Result<(B, usize, us
     Ok((base, num_rows, num_cols))
 }
 
-/// Input for the base implementation of a matrix. Requires some extra things like visibility.
+
+/// Input required to create an instance of a matrix.
 pub struct CreationInput {
     pub base: BaseCreationInput,
     pub num_rows: usize,
@@ -37,7 +39,7 @@ impl Parse for CreationInput {
     }
 }
 
-/// Input for all secondary matrix implementation functions; things that do not create the matrix.
+/// Input required for most other matrix extension macros.
 pub struct SimpleInput {
     pub base: BaseSimpleInput,
     pub num_rows: usize,
@@ -90,6 +92,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=#doc]
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
+        #[derive(::core::clone::Clone, ::core::marker::Copy, ::core::fmt::Debug)]
         #struct_vis struct #struct_name {
             // We want rows; cols. That gives us an array of columns, each containing one value for each row. This means
             // that to index the matrix using the mathematical convention of `M_rc` (row first), we need to index
@@ -207,9 +210,10 @@ pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
                 parse_quote! { #ident[(#r, #c)] }
             }),
             rhs_indexer: None,
-            constructor_arg_count: num_rows * num_cols,
+            total_elements: num_rows * num_cols,
         },
-        &[common::BinaryOperator::Multiplication, common::BinaryOperator::Division],
+        &[common::BinaryOperator::Division],
+        &[common::BinaryOperator::Multiplication], // implement multiplication for both mat*f32 and f32*mat
     )
 }
 
@@ -234,9 +238,10 @@ pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
                 let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
                 parse_quote! { #ident[(#r, #c)] }
             }),
-            constructor_arg_count: num_rows * num_cols,
+            total_elements: num_rows * num_cols,
         },
         &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
+        &[], // self-ops are always "commutative" (mat + mat has the same impl as mat + mat)
     )
 }
 
