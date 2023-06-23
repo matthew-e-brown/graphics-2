@@ -4,7 +4,7 @@ use indefinite::indefinite_article_only_capitalized;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_quote, Ident, LitInt, Token};
+use syn::{parse_quote, ExprBinary, Ident, LitInt, Token};
 
 use crate::common::{self, BaseCreationInput, BaseSimpleInput};
 
@@ -58,12 +58,13 @@ impl Parse for SimpleInput {
 
 pub fn create_base(input: CreationInput) -> TokenStream {
     let CreationInput {
-        base: BaseCreationInput {
-            attributes,
-            struct_vis,
-            struct_name,
-            inner_type,
-        },
+        base:
+            BaseCreationInput {
+                attributes,
+                struct_vis,
+                struct_name,
+                inner_type,
+            },
         num_elements,
     } = &input;
 
@@ -194,4 +195,24 @@ pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
         &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
         &[], // self-ops are always commutative for free (vec + vec is the same as vec + vec)
     )
+}
+
+
+pub fn impl_dot_product(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, inner_type },
+        num_elements,
+    } = input;
+
+    let terms = (0..num_elements).map(|i| -> ExprBinary {
+        parse_quote! { self[#i] * rhs[#i] }
+    });
+
+    quote! {
+        impl #struct_name {
+            pub fn dot(&self, rhs: &Self) -> #inner_type {
+                #( #terms )+*
+            }
+        }
+    }
 }

@@ -1,6 +1,7 @@
 //! Matrices.
 //!
-//! See [the crate-level documentation](self) for general details that pertain to all data structures in the crate.
+//! See [the crate-level documentation](crate) for general details that pertain to all data structures in the crate.
+
 
 math_proc::create_matrix! {
     #[derive(Copy, Clone, Debug, PartialEq)]
