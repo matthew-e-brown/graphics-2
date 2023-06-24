@@ -90,44 +90,16 @@ pub fn create_base(input: CreationInput) -> TokenStream {
     // These features are always available on all vectors
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
+    output.extend(impl_fallible_conversion(&input));
     output.extend(common::impl_container_conversions(
         struct_name,
         &parse_quote!([#inner_type; #num_elements]),
         &parse_quote!(v),
     ));
-    output.extend(impl_fallible_conversion(&input));
 
     output
 }
 
-fn impl_indexing(input: &CreationInput) -> TokenStream {
-    let CreationInput {
-        base: BaseCreationInput { struct_name, inner_type, .. },
-        ..
-    } = input;
-
-    quote! {
-        impl<I> ::core::ops::Index<I> for #struct_name
-        where
-            I: ::core::slice::SliceIndex<[#inner_type]>,
-        {
-            type Output = I::Output;
-
-            fn index(&self, index: I) -> &Self::Output {
-                &self.v[index]
-            }
-        }
-
-        impl<I> ::core::ops::IndexMut<I> for #struct_name
-        where
-            I: ::core::slice::SliceIndex<[#inner_type]>,
-        {
-            fn index_mut(&mut self, index: I) -> &mut Self::Output {
-                &mut self.v[index]
-            }
-        }
-    }
-}
 
 fn impl_constructor(input: &CreationInput) -> TokenStream {
     let CreationInput {
@@ -160,6 +132,37 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
         }
     }
 }
+
+
+fn impl_indexing(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
+        ..
+    } = input;
+
+    quote! {
+        impl<I> ::core::ops::Index<I> for #struct_name
+        where
+            I: ::core::slice::SliceIndex<[#inner_type]>,
+        {
+            type Output = I::Output;
+
+            fn index(&self, index: I) -> &Self::Output {
+                &self.v[index]
+            }
+        }
+
+        impl<I> ::core::ops::IndexMut<I> for #struct_name
+        where
+            I: ::core::slice::SliceIndex<[#inner_type]>,
+        {
+            fn index_mut(&mut self, index: I) -> &mut Self::Output {
+                &mut self.v[index]
+            }
+        }
+    }
+}
+
 
 fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
     let CreationInput {

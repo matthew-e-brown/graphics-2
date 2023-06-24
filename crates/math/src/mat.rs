@@ -29,10 +29,6 @@ math_proc::matrix_impl_self_ops!(Mat2, f32, 2, 2);
 math_proc::matrix_impl_self_ops!(Mat3, f32, 3, 3);
 math_proc::matrix_impl_self_ops!(Mat4, f32, 4, 4);
 
-math_proc::matrix_impl_row_col_conversions!(Mat2, f32, 2, 2);
-math_proc::matrix_impl_row_col_conversions!(Mat3, f32, 3, 3);
-math_proc::matrix_impl_row_col_conversions!(Mat4, f32, 4, 4);
-
 
 #[cfg(test)]
 mod tests {

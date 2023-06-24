@@ -208,14 +208,6 @@ export_macro! {
     matrix::CreationInput,
 }
 
-export_macro! {
-    /// Implements conversions between the inner types for rows and columns for matrices.
-    ///
-    /// For example, this allows a `Mat4` of `f32`s to be built out of four `[f32; 4]`s.
-    matrix_impl_row_col_conversions,
-    matrix::impl_row_col_conversions,
-    matrix::SimpleInput,
-}
 
 export_macro! {
     /// Implements operations between a matrix and its inner type.

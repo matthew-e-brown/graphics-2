@@ -111,38 +111,17 @@ pub fn create_base(input: CreationInput) -> TokenStream {
     // These features are always available on all matrices
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
+    output.extend(impl_fallible_conversion(&input));
+    output.extend(impl_row_col_conversions(&input));
     output.extend(common::impl_container_conversions(
         struct_name,
         &parse_quote!([[#inner_type; #num_rows]; #num_cols]),
         &parse_quote!(m),
     ));
-    output.extend(impl_fallible_conversion(&input));
 
     output
 }
 
-fn impl_indexing(input: &CreationInput) -> TokenStream {
-    let CreationInput {
-        base: BaseCreationInput { struct_name, inner_type, .. },
-        ..
-    } = input;
-
-    quote! {
-        impl ::core::ops::Index<(usize, usize)> for #struct_name {
-            type Output = #inner_type;
-
-            fn index(&self, idx: (usize, usize)) -> &Self::Output {
-                &self.m[idx.1][idx.0]
-            }
-        }
-
-        impl ::core::ops::IndexMut<(usize, usize)> for #struct_name {
-            fn index_mut(&mut self, idx: (usize, usize)) -> &mut Self::Output {
-                &mut self.m[idx.1][idx.0]
-            }
-        }
-    }
-}
 
 fn impl_constructor(input: &CreationInput) -> TokenStream {
     let CreationInput {
@@ -203,6 +182,31 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
     }
 }
 
+
+fn impl_indexing(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
+        ..
+    } = input;
+
+    quote! {
+        impl ::core::ops::Index<(usize, usize)> for #struct_name {
+            type Output = #inner_type;
+
+            fn index(&self, idx: (usize, usize)) -> &Self::Output {
+                &self.m[idx.1][idx.0]
+            }
+        }
+
+        impl ::core::ops::IndexMut<(usize, usize)> for #struct_name {
+            fn index_mut(&mut self, idx: (usize, usize)) -> &mut Self::Output {
+                &mut self.m[idx.1][idx.0]
+            }
+        }
+    }
+}
+
+
 fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
     let CreationInput {
         base: BaseCreationInput { struct_name, inner_type, .. },
@@ -237,68 +241,16 @@ fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
     }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
-// Additional implementations
-
-
-pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
-    let SimpleInput {
-        base: BaseSimpleInput { struct_name, inner_type },
+fn impl_row_col_conversions(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
         num_rows,
         num_cols,
+        ..
     } = input;
 
-    common::impl_cw_ops(
-        common::CWOperatorSettings {
-            lhs_type: &struct_name.into(),
-            rhs_type: &inner_type.into(),
-            lhs_indexer: Some(&|ident, n| {
-                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
-                parse_quote! { #ident[(#r, #c)] }
-            }),
-            rhs_indexer: None,
-            total_elements: num_rows * num_cols,
-        },
-        &[common::BinaryOperator::Division],
-        &[common::BinaryOperator::Multiplication], // implement multiplication for both mat*f32 and f32*mat
-    )
-}
-
-
-pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
-    let SimpleInput {
-        base: BaseSimpleInput { struct_name, .. },
-        num_rows,
-        num_cols,
-    } = input;
-
-    let self_type = struct_name.into();
-    common::impl_cw_ops(
-        common::CWOperatorSettings {
-            lhs_type: &self_type,
-            rhs_type: &self_type,
-            lhs_indexer: Some(&|ident, n| {
-                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
-                parse_quote! { #ident[(#r, #c)] }
-            }),
-            rhs_indexer: Some(&|ident, n| {
-                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
-                parse_quote! { #ident[(#r, #c)] }
-            }),
-            total_elements: num_rows * num_cols,
-        },
-        &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
-        &[], // self-ops are always "commutative" (mat + mat has the same impl as mat + mat)
-    )
-}
-
-
-pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
-    let SimpleInput {
-        base: BaseSimpleInput { struct_name, inner_type },
-        num_rows,
-        num_cols,
-    } = input;
+    let num_cols = *num_cols;
+    let num_rows = *num_rows;
 
     // -------------------------------------------------
     // Cols
@@ -379,4 +331,59 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
             #from_cols
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Additional implementations
+
+
+pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, inner_type },
+        num_rows,
+        num_cols,
+    } = input;
+
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &struct_name.into(),
+            rhs_type: &inner_type.into(),
+            lhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            rhs_indexer: None,
+            total_elements: num_rows * num_cols,
+        },
+        &[common::BinaryOperator::Division],
+        &[common::BinaryOperator::Multiplication], // implement multiplication for both mat*f32 and f32*mat
+    )
+}
+
+
+pub fn impl_self_ops(input: SimpleInput) -> TokenStream {
+    let SimpleInput {
+        base: BaseSimpleInput { struct_name, .. },
+        num_rows,
+        num_cols,
+    } = input;
+
+    let self_type = struct_name.into();
+    common::impl_cw_ops(
+        common::CWOperatorSettings {
+            lhs_type: &self_type,
+            rhs_type: &self_type,
+            lhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            rhs_indexer: Some(&|ident, n| {
+                let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
+                parse_quote! { #ident[(#r, #c)] }
+            }),
+            total_elements: num_rows * num_cols,
+        },
+        &[common::BinaryOperator::Addition, common::BinaryOperator::Subtraction],
+        &[], // self-ops are always "commutative" (mat + mat has the same impl as mat + mat)
+    )
 }
