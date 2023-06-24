@@ -75,12 +75,13 @@ fn index_1d_to_2d(idx: usize, num_rows: usize, num_cols: usize) -> (usize, usize
 
 pub fn create_base(input: CreationInput) -> TokenStream {
     let CreationInput {
-        base: BaseCreationInput {
-            attributes,
-            struct_vis,
-            struct_name,
-            inner_type,
-        },
+        base:
+            BaseCreationInput {
+                attributes,
+                struct_vis,
+                struct_name,
+                inner_type,
+            },
         num_rows,
         num_cols,
     } = &input;
@@ -97,6 +98,8 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
         #(#attributes)*
+        #[derive(::core::clone::Clone)]
+        #[repr(transparent)]
         #struct_vis struct #struct_name {
             // We want rows; cols. That gives us an array of columns, each containing one value for each row. This means
             // that to index the matrix using the mathematical convention of `M_rc` (row first), we need to index
@@ -113,6 +116,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         &parse_quote!([[#inner_type; #num_rows]; #num_cols]),
         &parse_quote!(m),
     ));
+    output.extend(impl_fallible_conversion(&input));
 
     output
 }
@@ -199,6 +203,40 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
     }
 }
 
+fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
+        num_rows,
+        num_cols,
+    } = input;
+
+    // One `.try_into()?` for each column in our list of columns
+    let col_attempts = (0..*num_cols).map(|n| quote! { m[#n].try_into()? });
+
+    quote! {
+        // Slice of arrays -> matrix
+        impl<'a> ::core::convert::TryFrom<&'a [[#inner_type; #num_rows]]> for #struct_name {
+            type Error = ::core::array::TryFromSliceError;
+
+            fn try_from(value: &'a [[#inner_type; #num_rows]]) -> Result<Self, Self::Error> {
+                let m = value.try_into()?;
+                Ok(Self { m })
+            }
+        }
+
+        // Slice of slices -> matrix
+        impl<'a, 'b> TryFrom<&'a [&'b [#inner_type]]> for #struct_name {
+            type Error = core::array::TryFromSliceError;
+
+            fn try_from(value: &'a [&'b [#inner_type]]) -> Result<Self, Self::Error> {
+                let m: [_; #num_cols] = value.try_into()?;
+                let m = [ #(#col_attempts),* ];
+                Ok(Self { m })
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Additional implementations
 
@@ -280,6 +318,18 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
         {
             Self::from([ #(#param_names.into()),* ])
         }
+
+        #[doc="Tries to convert multiple columns into a single matrix."]
+        #[doc=""]
+        #[doc="This method simply calls [`try_into`](TryInto::try_into) on all columns, then falls back on"]
+        #[doc="[`from_cols`]."]
+        pub fn try_from_cols<C>( #(#param_names: C),* ) -> Result<Self, C::Error>
+        where
+            C: ::core::convert::TryInto<[#inner_type; #num_rows]>
+        {
+            #( let #param_names = #param_names.try_into()?; )*
+            Ok(Self::from_cols( #(#param_names),* ))
+        }
     };
 
     // -------------------------------------------------
@@ -308,6 +358,18 @@ pub fn impl_row_col_conversions(input: SimpleInput) -> TokenStream {
             // We need to convert all of our parameter names first so that we can index them
             #( let #param_names = #param_names.into(); )*
             Self::new( #(#params_indexed),* )
+        }
+
+        #[doc="Tries to convert multiple rows into a single matrix."]
+        #[doc=""]
+        #[doc="This method simply calls [`try_into`][TryInto::try_into] on all rows, then falls back on [`from_rows`]."]
+        pub fn try_from_rows<R>( #(#param_names: R),* ) -> Result<Self, R::Error>
+        where
+            R: ::core::convert::TryInto<[#inner_type; #num_cols]>
+        {
+            // We need to convert all of our parameter names first so that we can index them
+            #( let #param_names = #param_names.try_into()?; )*
+            Ok(Self::from_rows( #(#param_names),* ))
         }
     };
 

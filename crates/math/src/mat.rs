@@ -4,19 +4,19 @@
 
 
 math_proc::create_matrix! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Mat2;
     f32, 2, 2;
 }
 
 math_proc::create_matrix! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Mat3;
     f32, 3, 3;
 }
 
 math_proc::create_matrix! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Mat4;
     f32, 4, 4;
 }
@@ -88,9 +88,9 @@ mod tests {
         let a = Mat2::from_cols(v, w);
         assert_eq!(a.m, [[1.0, 2.0], [3.0, 4.0]]);
 
-        let v = Vec4::new( 10.,  20.,  30.,  40.);
-        let w = Vec4::new( 50.,  60.,  70.,  80.);
-        let s = Vec4::new( 90., 100., 110., 120.);
+        let v = Vec4::new(10., 20., 30., 40.);
+        let w = Vec4::new(50., 60., 70., 80.);
+        let s = Vec4::new(90., 100., 110., 120.);
         let t = Vec4::new(130., 140., 150., 160.);
 
         let a = Mat4::from_rows(v, w, s, t);

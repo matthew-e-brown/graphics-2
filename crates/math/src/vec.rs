@@ -4,19 +4,19 @@
 
 
 math_proc::create_vector! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Vec2;
     f32, 2;
 }
 
 math_proc::create_vector! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Vec3;
     f32, 3;
 }
 
 math_proc::create_vector! {
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq)]
     pub struct Vec4;
     f32, 4;
 }
@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn scalar_ops() {
-        let x = Vec3::from([ 1.0, 2.0, 3.0 ]);
+        let x = Vec3::from([1.0, 2.0, 3.0]);
         assert_eq!((x * 10.0).v, Vec3::new(10.0, 20.0, 30.0).v);
         assert_eq!((x / 2.0).v, Vec3::new(0.5, 1.0, 1.5).v);
     }

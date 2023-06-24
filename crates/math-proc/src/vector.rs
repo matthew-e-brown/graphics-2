@@ -80,6 +80,8 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         #[doc=""]
         #[doc="See [the module-level documentation for more](self)."]
         #(#attributes)*
+        #[derive(::core::clone::Clone)]
+        #[repr(transparent)]
         #struct_vis struct #struct_name {
             v: [#inner_type; #num_elements],
         }
@@ -93,6 +95,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
         &parse_quote!([#inner_type; #num_elements]),
         &parse_quote!(v),
     ));
+    output.extend(impl_fallible_conversion(&input));
 
     output
 }
@@ -104,17 +107,23 @@ fn impl_indexing(input: &CreationInput) -> TokenStream {
     } = input;
 
     quote! {
-        impl ::core::ops::Index<usize> for #struct_name {
-            type Output = #inner_type;
+        impl<I> ::core::ops::Index<I> for #struct_name
+        where
+            I: ::core::slice::SliceIndex<[#inner_type]>,
+        {
+            type Output = I::Output;
 
-            fn index(&self, idx: usize) -> &Self::Output {
-                &self.v[idx]
+            fn index(&self, index: I) -> &Self::Output {
+                &self.v[index]
             }
         }
 
-        impl ::core::ops::IndexMut<usize> for #struct_name {
-            fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
-                &mut self.v[idx]
+        impl<I> ::core::ops::IndexMut<I> for #struct_name
+        where
+            I: ::core::slice::SliceIndex<[#inner_type]>,
+        {
+            fn index_mut(&mut self, index: I) -> &mut Self::Output {
+                &mut self.v[index]
             }
         }
     }
@@ -147,6 +156,25 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
                 Self {
                     v: [ #(#param_names),* ],
                 }
+            }
+        }
+    }
+}
+
+fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
+        ..
+    } = input;
+
+    quote! {
+        // - `&[f32]` -> `Result<Vec3>`
+        impl<'a> ::core::convert::TryFrom<&'a [#inner_type]> for #struct_name {
+            type Error = ::core::array::TryFromSliceError;
+
+            fn try_from(value: &[#inner_type]) -> Result<Self, Self::Error> {
+                let v = value.try_into()?;
+                Ok(Self { v })
             }
         }
     }

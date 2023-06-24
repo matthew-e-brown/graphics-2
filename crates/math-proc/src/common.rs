@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_quote, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility, Attribute};
+use syn::{parse_quote, Attribute, BinOp, Expr, Generics, Ident, Member, Path, Token, Type, TypePath, Visibility};
 
 
 /// The inputs required for the creation of any struct through a macro. Extended by both [`matrix`] and [`vector`]
@@ -250,15 +250,28 @@ pub fn impl_cw_ops(
 /// Creates all sorts of conversions that allow the vector or matrix to be converted back and forth from the type it
 /// contains.
 ///
-/// - `wrapped_type` is the entire type that the vector or matrix contains (`[f32; 2]` instead of `f32`).
+/// - `wrapped_type` is the entire type that the vector or matrix wraps (e.g., `[f32; 2]` instead of `f32`).
 /// - `member_name` is the name of that container as a member of the vector or matrix (`.m` or `.data`, for example).
 pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, member_name: &Member) -> TokenStream {
     quote! {
+        // -------------------------------------------------------------------------------------
+        // Reference conversions (free)
+        // -------------------------------------------------------------------------------------
+
         // - `&Vec3` as `&[f32; 3]`
         // - `&Mat4` as `&[[f32; 4]; 4]`
         impl ::core::convert::AsRef<#wrapped_type> for #struct_name {
             fn as_ref(&self) -> &#wrapped_type {
                 &self.#member_name
+            }
+        }
+
+        // - `&[f32; 3]` as `&mut Vec3`
+        // - `&[[f32; 4]; 4]` as `&mut Mat4`
+        impl ::core::convert::AsRef<#struct_name> for #wrapped_type {
+            fn as_ref(&self) -> &#struct_name {
+                // SAFETY: `repr(transparent)` on vector and matrix structs makes this conversion guaranteed
+                unsafe { ::core::mem::transmute(self) }
             }
         }
 
@@ -269,6 +282,19 @@ pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, memb
                 &mut self.#member_name
             }
         }
+
+        // - `&mut [f32; 3]` as `&mut Vec3`
+        // - `&mut [[f32; 4]; 4]` as `&mut Mat4`
+        impl ::core::convert::AsMut<#struct_name> for #wrapped_type {
+            fn as_mut(&mut self) -> &mut #struct_name {
+                // SAFETY: `repr(transparent)` on vector and matrix structs makes this conversion guaranteed
+                unsafe { ::core::mem::transmute(self) }
+            }
+        }
+
+        // -------------------------------------------------------------------------------------
+        // Owned conversions (copies)
+        // -------------------------------------------------------------------------------------
 
         // - `[f32; 3]` -> `Vec3`
         // - `[[f32; 4]; 4]` -> `Mat4`
@@ -286,19 +312,21 @@ pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, memb
             }
         }
 
-        // - `&Vec3` -> `&[f32; 3]`
-        // - `&Mat4` -> `&[[f32; 4]; 4]`
-        impl<'a> ::core::convert::From<&'a #struct_name> for &'a #wrapped_type {
-            fn from(value: &'a #struct_name) -> Self {
-                &value.#member_name
+        // - `&[f32; 3]` -> `Vec3`
+        // - `&[[f32; 4]; 4]` -> `Mat4`
+        impl<'a> ::core::convert::From<&'a #wrapped_type> for #struct_name {
+            fn from(value: &#wrapped_type) -> Self {
+                // Clone to owned variant (this is a reference to an array, not a slice; cloning gives us a fresh copy
+                // of the entire array through that reference)
+                Self::from(value.clone())
             }
         }
 
-        // - `&mut Vec3` -> `&mut [f32; 3]`
-        // - `&mut Mat4` -> `&mut [[f32; 4]; 4]`
-        impl<'a> ::core::convert::From<&'a mut #struct_name> for &'a mut #wrapped_type {
-            fn from(value: &'a mut #struct_name) -> Self {
-                &mut value.#member_name
+        // - `&Vec3` -> `[f32; 3]`
+        // - `&Mat4` -> `[[f32; 4]; 4]`
+        impl<'a> ::core::convert::From<&'a #struct_name> for #wrapped_type {
+            fn from(value: &#struct_name) -> Self {
+                Self::from(value.clone())
             }
         }
     }
