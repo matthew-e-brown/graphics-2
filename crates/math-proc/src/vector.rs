@@ -152,7 +152,7 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
     quote! {
         impl #struct_name {
             #[doc="Creates a new vector."]
-            pub fn new(#(#param_names: #param_types),*) -> Self {
+            pub const fn new(#(#param_names: #param_types),*) -> Self {
                 Self {
                     v: [ #(#param_names),* ],
                 }

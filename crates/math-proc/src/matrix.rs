@@ -194,7 +194,7 @@ fn impl_constructor(input: &CreationInput) -> TokenStream {
             #[doc=""]
             #[doc="Parameters should be given in **row-major order**. This is so that construction of matrices, when"]
             #[doc="laid out over multiple lines, lines up with their mathematical representation."]
-            pub fn new(#(#param_names: #param_types),*) -> Self {
+            pub const fn new(#(#param_names: #param_types),*) -> Self {
                 Self {
                     m: #array_of_cols
                 }
