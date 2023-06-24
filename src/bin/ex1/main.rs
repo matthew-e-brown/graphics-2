@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use gfx::gl;
-use gfx::gl::types::*;
+use gfx::shaders::{Program, ShaderObject, ShaderType};
 use gfx::glfw::{self, Context, WindowMode, WindowEvent, Key};
 use math::Vec3;
 
@@ -72,7 +72,10 @@ pub fn main() {
         vbo
     };
 
-    let program = unsafe { create_program(VERT_SHADER_STR, FRAG_SHADER_STR) }.unwrap();
+    let program = Program::link(&[
+        ShaderObject::compile(ShaderType::Vertex, VERT_SHADER_STR).unwrap(),
+        ShaderObject::compile(ShaderType::Fragment, FRAG_SHADER_STR).unwrap(),
+    ]).unwrap();
 
     let vao = unsafe {
         let mut vao = 0;
@@ -98,7 +101,7 @@ pub fn main() {
             gl::ClearColor(0.17, 0.17, 0.17, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            gl::UseProgram(program);
+            gl::UseProgram(program.gl_id());
             gl::BindVertexArray(vao);
             gl::DrawArrays(gl::TRIANGLES, 0, VERTICES.len() as i32);
         }
@@ -115,80 +118,5 @@ pub fn main() {
                 _ => (),
             }
         }
-    }
-}
-
-
-/// Compiles a single shader from source.
-unsafe fn compile_shader(shader_type: GLuint, source: &str) -> Result<GLuint, String> {
-    let shader = gl::CreateShader(shader_type);
-    let src_ptr = source.as_bytes().as_ptr().cast();
-    let src_len = source.len().try_into().map_err(|_| "Shader source is too long.".to_owned())?;
-
-    // glShaderSource expects two *arrays*, but since it expects C-style arrays and we aren't passing multiple sets of
-    // buffers, we can just pass the pointers.
-    gl::ShaderSource(shader, 1, &src_ptr, &src_len);
-    gl::CompileShader(shader);
-
-    // Ask OpenGL if it was successful
-    let mut success = 0;
-    gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut success);
-
-    if (success as GLboolean) == gl::FALSE {
-        let mut log_size = 0;
-        gl::GetShaderiv(shader, gl::INFO_LOG_LENGTH, &mut log_size);
-
-        // The null pointer is for the out parameter for how long the string it spits out is. We have pre-checked this,
-        // so we don't really care.
-        let mut buffer = vec![0; log_size as usize];
-        gl::GetShaderInfoLog(shader, log_size, std::ptr::null_mut(), buffer.as_mut_ptr().cast());
-
-        // `lossy` because that way we won't crash if the log had invalid unicode; just get a `?` character.
-        let log_output = String::from_utf8_lossy(&buffer[..]);
-
-        gl::DeleteShader(shader);
-
-        Err(log_output.into_owned())
-    } else {
-        Ok(shader)
-    }
-}
-
-
-unsafe fn create_program(vert_src: &str, frag_src: &str) -> Result<GLuint, String> {
-    // Compile both shaders, failing out of this one if either shader fails
-    let vert_shader = compile_shader(gl::VERTEX_SHADER, vert_src.trim())?;
-    let frag_shader = compile_shader(gl::FRAGMENT_SHADER, frag_src.trim())?;
-
-    // Create our program and link the shaders
-    let program = gl::CreateProgram();
-    gl::AttachShader(program, vert_shader);
-    gl::AttachShader(program, frag_shader);
-    gl::LinkProgram(program);
-
-    // Check if we were successful
-    let mut success = 0;
-    gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
-
-    if (success as GLboolean) == gl::FALSE {
-        let mut log_size = 0;
-        gl::GetProgramiv(program, gl::INFO_LOG_LENGTH, &mut log_size);
-
-        let mut buffer = vec![0; log_size as usize];
-        gl::GetProgramInfoLog(program, log_size, std::ptr::null_mut(), buffer.as_mut_ptr().cast());
-
-        gl::DeleteProgram(program);
-        gl::DeleteShader(vert_shader);
-        gl::DeleteShader(frag_shader);
-
-        let log_output = String::from_utf8_lossy(&buffer);
-        Err(log_output.into_owned())
-    } else {
-        // In the future, we will save these shaders so that we don't have to recompile; for now, we only need the
-        // linked program.
-        gl::DeleteShader(vert_shader);
-        gl::DeleteShader(frag_shader);
-
-        Ok(program)
     }
 }
