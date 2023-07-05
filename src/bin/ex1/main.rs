@@ -1,12 +1,12 @@
 use std::mem::size_of;
 
+use gfx::buffers::{Buffer, BufferTarget, DataUsage};
 use gfx::gl;
-use gfx::shaders::{Program, ShaderObject, ShaderType};
-use gfx::glfw::{self, Context, WindowMode, WindowEvent, Key};
+use gfx::glfw::{self, Context, Key, WindowEvent, WindowMode};
+use gfx::shaders::{Program, Shader, ShaderType};
 use math::Vec3;
 
 
-const VERT_BUFFER_SIZE: usize = size_of::<[[Vec3; 2]; 3]>();
 const VERTICES: [[Vec3; 2]; 3] = [
     // Position, then color
     [Vec3::new(-0.5, -0.5, 0.0), Vec3::new(1.0, 0.0, 0.0)],
@@ -56,26 +56,14 @@ pub fn main() {
     // OpenGL rendering set up
     // -----------------------------------------------------------------
 
-    let _vbo = unsafe {
-        // Create our VBO on the graphics card
-        let mut vbo = 0;
-        gl::CreateBuffers(1, &mut vbo);
-
-        // Send our data
-        let size_of = VERT_BUFFER_SIZE
-            .try_into()
-            .expect("Vertex data is too large to fit inside `isize`.");
-        let vert_ptr = VERTICES.as_ptr().cast();
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-        gl::BufferData(gl::ARRAY_BUFFER, size_of, vert_ptr, gl::STATIC_DRAW);
-
-        vbo
-    };
+    let vbo = Buffer::new_with_data(&VERTICES, DataUsage::StaticDraw);
+    vbo.bind(BufferTarget::ArrayBuffer);
 
     let program = Program::link(&[
-        ShaderObject::compile(ShaderType::Vertex, VERT_SHADER_STR).unwrap(),
-        ShaderObject::compile(ShaderType::Fragment, FRAG_SHADER_STR).unwrap(),
-    ]).unwrap();
+        Shader::compile(ShaderType::Vertex, VERT_SHADER_STR).unwrap(),
+        Shader::compile(ShaderType::Fragment, FRAG_SHADER_STR).unwrap(),
+    ])
+    .unwrap();
 
     let vao = unsafe {
         let mut vao = 0;
@@ -101,7 +89,7 @@ pub fn main() {
             gl::ClearColor(0.17, 0.17, 0.17, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
-            gl::UseProgram(program.gl_id());
+            gl::UseProgram(program.gl_name());
             gl::BindVertexArray(vao);
             gl::DrawArrays(gl::TRIANGLES, 0, VERTICES.len() as i32);
         }
@@ -114,7 +102,7 @@ pub fn main() {
                 // Do nothing except close when ESC is pressed
                 WindowEvent::Key(Key::Escape, _, glfw::Action::Press, _) => {
                     window.set_should_close(true);
-                }
+                },
                 _ => (),
             }
         }
