@@ -168,6 +168,11 @@ export_macro! {
     ///
     /// Implements multiplication and division through [`Div`] and [`Mul`] as well as [`DivAssign`] and [`MulAssign`].
     /// As such, it can only be done for vectors that contain types that implement those traits.
+    ///
+    /// [`Div`]: core::ops::Div
+    /// [`Mul`]: core::ops::Mul
+    /// [`DivAssign`]: core::ops::DivAssign
+    /// [`MulAssign`]: core::ops::MulAssign
     vector_impl_scalar_ops,
     vector::impl_scalar_ops,
     vector::SimpleInput,
@@ -180,6 +185,11 @@ export_macro! {
     ///
     /// Implements addition and subtraction through [`Add`] and [`Sub`] as well as [`AddAssign`] and [`SubAssign`]. As
     /// such, it can only be done for vectors that contain types that implement those traits.
+    ///
+    /// [`Add`]: core::ops::Add
+    /// [`Sub`]: core::ops::Sub
+    /// [`AddAssign`]: core::ops::AddAssign
+    /// [`SubAssign`]: core::ops::SubAssign
     vector_impl_self_ops,
     vector::impl_self_ops,
     vector::SimpleInput,
@@ -190,6 +200,9 @@ export_macro! {
     ///
     /// Implementation is done using multiplication and addition. As such, it can only be done for vectors that contain
     /// types that implement [`Mul`] and [`Add`].
+    ///
+    /// [`Mul`]: core::ops::Mul
+    /// [`Add`]: core::ops::Add
     vector_impl_dot_product,
     vector::impl_dot_product,
     vector::SimpleInput,
@@ -216,6 +229,11 @@ export_macro! {
     ///
     /// Implements addition and subtraction through [`Add`] and [`Sub`] as well as [`AddAssign`] and [`SubAssign`]. As
     /// such, it can only be done for matrices that contain types that implement those traits.
+    ///
+    /// [`Add`]: core::ops::Add
+    /// [`Sub`]: core::ops::Sub
+    /// [`AddAssign`]: core::ops::AddAssign
+    /// [`SubAssign`]: core::ops::SubAssign
     matrix_impl_scalar_ops,
     matrix::impl_scalar_ops,
     matrix::SimpleInput,
@@ -228,6 +246,11 @@ export_macro! {
     ///
     /// Implements addition and subtraction through [`Add`] and [`Sub`] as well as [`AddAssign`] and [`SubAssign`]. As
     /// such, it can only be done for matrices that contain types that implement those traits.
+    ///
+    /// [`Add`]: core::ops::Add
+    /// [`Sub`]: core::ops::Sub
+    /// [`AddAssign`]: core::ops::AddAssign
+    /// [`SubAssign`]: core::ops::SubAssign
     matrix_impl_self_ops,
     matrix::impl_self_ops,
     matrix::SimpleInput,
