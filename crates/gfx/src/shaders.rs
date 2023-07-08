@@ -1,42 +1,17 @@
-use std::fmt::Display;
-
 use gl::types::*;
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ShaderType {
-    Compute,
-    Fragment,
-    Geometry,
-    TessellationControl,
-    TessellationEvaluation,
-    Vertex,
-}
-
-impl From<ShaderType> for GLenum {
-    fn from(value: ShaderType) -> Self {
-        match value {
-            ShaderType::Compute => gl::COMPUTE_SHADER,
-            ShaderType::Fragment => gl::FRAGMENT_SHADER,
-            ShaderType::Geometry => gl::GEOMETRY_SHADER,
-            ShaderType::TessellationControl => gl::TESS_CONTROL_SHADER,
-            ShaderType::TessellationEvaluation => gl::TESS_EVALUATION_SHADER,
-            ShaderType::Vertex => gl::VERTEX_SHADER,
-        }
-    }
-}
+use crate::gl_enum;
 
 
-impl Display for ShaderType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(match self {
-            ShaderType::Compute => "compute",
-            ShaderType::Fragment => "fragment",
-            ShaderType::Geometry => "geometry",
-            ShaderType::TessellationControl => "tessellation control",
-            ShaderType::TessellationEvaluation => "tessellation evaluation",
-            ShaderType::Vertex => "vertex",
-        })
+gl_enum! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum ShaderType {
+        Compute => COMPUTE_SHADER,
+        Fragment => FRAGMENT_SHADER,
+        Geometry => GEOMETRY_SHADER,
+        TessellationControl => TESS_CONTROL_SHADER,
+        TessellationEvaluation => TESS_EVALUATION_SHADER,
+        Vertex => VERTEX_SHADER,
     }
 }
 
@@ -50,20 +25,29 @@ pub struct Shader {
 
 impl Drop for Shader {
     fn drop(&mut self) {
-        unsafe { gl::DeleteShader(self.name) };
+        unsafe {
+            gl::DeleteShader(self.name);
+        }
     }
 }
 
 impl Shader {
-    /// The _"name"_ that OpenGL uses for this shader under the hood.
+    /// Returns the "name" (ID) that OpenGL uses for this shader under the hood.
     pub fn gl_name(&self) -> GLuint {
         self.name
+    }
+
+    /// Returns this shader's type.
+    pub fn ty(&self) -> ShaderType {
+        self.ty
     }
 
     /// Gets any log information from the previous shader compilation attempt.
     pub fn get_log_info(&self) -> Option<String> {
         let mut log_size = 0;
-        unsafe { gl::GetShaderiv(self.name, gl::INFO_LOG_LENGTH, &mut log_size) };
+        unsafe {
+            gl::GetShaderiv(self.name, gl::INFO_LOG_LENGTH, &mut log_size);
+        }
 
         if log_size <= 0 {
             return None;
@@ -72,14 +56,16 @@ impl Shader {
         // -1 because we don't need the NULL at the end
         // (https://registry.khronos.org/OpenGL-Refpages/es2.0/xhtml/glGetShaderiv.xml)
         let mut buffer = vec![0; log_size as usize - 1];
-        unsafe { gl::GetShaderInfoLog(self.name, log_size - 1, std::ptr::null_mut(), buffer.as_mut_ptr().cast()) };
+        unsafe {
+            gl::GetShaderInfoLog(self.name, log_size - 1, std::ptr::null_mut(), buffer.as_mut_ptr().cast());
+        }
 
         Some(String::from_utf8_lossy(&buffer).into())
     }
 
     /// Compiles the given source string into a new shader object.
     ///
-    /// If compilation is unsuccessful, the shader's error log is returned.
+    /// Upon failure, the shader's info log is returned.
     pub fn compile(ty: ShaderType, src: &str) -> Result<Self, String> {
         let name = unsafe { gl::CreateShader(ty.into()) };
         let shader = Self { name, ty };
@@ -126,12 +112,14 @@ pub struct Program {
 
 impl Drop for Program {
     fn drop(&mut self) {
-        unsafe { gl::DeleteProgram(self.name) };
+        unsafe {
+            gl::DeleteProgram(self.name);
+        }
     }
 }
 
 impl Program {
-    /// The _"name"_ that OpenGL uses for this program under the hood.
+    /// Returns the "name" (ID) that OpenGL uses for this program under the hood.
     pub fn gl_name(&self) -> GLuint {
         self.name
     }
@@ -139,51 +127,48 @@ impl Program {
     /// Gets any log information from the previous program linkage attempt.
     pub fn get_log_info(&self) -> Option<String> {
         let mut log_size = 0;
-        unsafe { gl::GetProgramiv(self.name, gl::INFO_LOG_LENGTH, &mut log_size) };
+        unsafe {
+            gl::GetProgramiv(self.name, gl::INFO_LOG_LENGTH, &mut log_size);
+        }
 
         if log_size <= 0 {
             return None;
         }
 
         let mut buffer = vec![0; log_size as usize - 1];
-        unsafe { gl::GetProgramInfoLog(self.name, log_size - 1, std::ptr::null_mut(), buffer.as_mut_ptr().cast()) };
+        unsafe {
+            gl::GetProgramInfoLog(self.name, log_size - 1, std::ptr::null_mut(), buffer.as_mut_ptr().cast());
+        }
 
         Some(String::from_utf8_lossy(&buffer).into())
     }
 
     /// Creates a program by linking the given shaders.
     ///
-    /// This call will fail if multiple of the same type of shader are used.
+    /// Upon failure, the program's info log is returned.
     pub fn link(shaders: &[Shader]) -> Result<Self, String> {
-        // Ensure that there is at most one shader of each type. *Technically*, it is allowed to have multiple shaders
-        // of the same stage, but the Khronos wiki recommends against ever doing this.
-        // https://www.khronos.org/opengl/wiki/Shader_Compilation#Program_setup
-        for shader in shaders {
-            for other in shaders {
-                // If this is a different object and it has the same type
-                if shader.name != other.name && shader.ty == other.ty {
-                    let message = format!("attempted to create program with multiple {} shaders", shader.ty);
-                    return Err(message);
-                }
-            }
-        }
-
         // Create our program
         let name = unsafe { gl::CreateProgram() };
         let program = Self { name };
 
         // Attach all the shaders
         for shader in shaders {
-            unsafe { gl::AttachShader(program.name, shader.name) };
+            unsafe {
+                gl::AttachShader(program.name, shader.name);
+            }
         }
 
         // Then link them all into one big compiled binary
-        unsafe { gl::LinkProgram(program.name) };
+        unsafe {
+            gl::LinkProgram(program.name);
+        }
 
         // The wiki says that, now that they're all linked into one binary, we should detach the shader objects (whether
         // or not we are going to delete them)
         for shader in shaders {
-            unsafe { gl::DetachShader(program.name, shader.name) }
+            unsafe {
+                gl::DetachShader(program.name, shader.name);
+            }
         }
 
         // Now error check

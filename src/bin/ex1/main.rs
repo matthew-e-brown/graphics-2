@@ -1,9 +1,9 @@
 use std::mem::size_of;
 
-use gfx::buffers::{Buffer, BufferTarget, DataUsage};
-use gfx::gl;
-use gfx::glfw::{self, Context, Key, WindowEvent, WindowMode};
+use gfx::bindings as gl;
+use gfx::buffers::{Buffer, BufferTarget, BufferUsage};
 use gfx::shaders::{Program, Shader, ShaderType};
+use glfw::{self, Context, Key, WindowEvent, WindowMode};
 use math::Vec3;
 
 
@@ -56,14 +56,15 @@ pub fn main() {
     // OpenGL rendering set up
     // -----------------------------------------------------------------
 
-    let vbo = Buffer::new_with_data(&VERTICES, DataUsage::StaticDraw);
-    vbo.bind(BufferTarget::ArrayBuffer);
-
     let program = Program::link(&[
         Shader::compile(ShaderType::Vertex, VERT_SHADER_STR).unwrap(),
         Shader::compile(ShaderType::Fragment, FRAG_SHADER_STR).unwrap(),
     ])
     .unwrap();
+
+    let mut vbo = Buffer::new();
+    vbo.set_data(&VERTICES, BufferUsage::StaticDraw);
+    vbo.bind(BufferTarget::ArrayBuffer);
 
     let vao = unsafe {
         let mut vao = 0;
