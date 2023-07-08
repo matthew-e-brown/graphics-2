@@ -1,5 +1,5 @@
 [package]
-name = "math"
+name = "gloog-math"
 description = """
 Implementations of vectors and matrices. These types are not designed to be complete, generic,
 mathematical models of vectors or matrices like one would find in a crate like `nalgebra`; they are
@@ -11,5 +11,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Local deps
+gloog-macro = { path = "../gloog-macro" }
+# 3rd party deps
 bytemuck = "1.13.1"
-math-proc = { path = "../math-proc" }

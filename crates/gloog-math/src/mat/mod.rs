@@ -8,31 +8,31 @@ use bytemuck::{Pod, Zeroable};
 #[cfg(test)] mod tests;
 
 
-math_proc::create_matrix! {
+gloog_macro::create_matrix! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Mat2;
     f32, 2, 2;
 }
 
-math_proc::create_matrix! {
+gloog_macro::create_matrix! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Mat3;
     f32, 3, 3;
 }
 
-math_proc::create_matrix! {
+gloog_macro::create_matrix! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Mat4;
     f32, 4, 4;
 }
 
-math_proc::matrix_impl_scalar_ops!(Mat2, f32, 2, 2);
-math_proc::matrix_impl_scalar_ops!(Mat3, f32, 3, 3);
-math_proc::matrix_impl_scalar_ops!(Mat4, f32, 4, 4);
+gloog_macro::matrix_impl_scalar_ops!(Mat2, f32, 2, 2);
+gloog_macro::matrix_impl_scalar_ops!(Mat3, f32, 3, 3);
+gloog_macro::matrix_impl_scalar_ops!(Mat4, f32, 4, 4);
 
-math_proc::matrix_impl_self_ops!(Mat2, f32, 2, 2);
-math_proc::matrix_impl_self_ops!(Mat3, f32, 3, 3);
-math_proc::matrix_impl_self_ops!(Mat4, f32, 4, 4);
+gloog_macro::matrix_impl_self_ops!(Mat2, f32, 2, 2);
+gloog_macro::matrix_impl_self_ops!(Mat3, f32, 3, 3);
+gloog_macro::matrix_impl_self_ops!(Mat4, f32, 4, 4);
 
 
 unsafe impl Zeroable for Mat2 {}

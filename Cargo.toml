@@ -6,13 +6,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Local crates
+gloog = { path = "crates/gloog" }
+gloog-math = { path = "crates/gloog-math" }
+# 3rd party deps
 glfw = "0.52.0"
-"gfx" = { path = "crates/gfx" }
-"math" = { path = "crates/math" }
+
 
 [workspace]
 members = [
-    "crates/gfx",
-    "crates/math",
-    "crates/math-proc",
+    "crates/gloog",
+    "crates/gloog-macro",
+    "crates/gloog-math",
 ]

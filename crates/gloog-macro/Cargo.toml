@@ -1,5 +1,5 @@
 [package]
-name = "math-proc"
+name = "gloog-macro"
 description = "Procedural macros used to generate the final types from the `math` crate."
 authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
 version = "0.1.0"

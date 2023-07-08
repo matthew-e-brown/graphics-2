@@ -1,10 +1,10 @@
 use std::mem::size_of;
 
-use gfx::bindings as gl;
-use gfx::buffers::{Buffer, BufferTarget, BufferUsage};
-use gfx::shaders::{Program, Shader, ShaderType};
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
-use math::Vec3;
+use gloog::bindings as gl;
+use gloog::buffers::{Buffer, BufferTarget, BufferUsage};
+use gloog::shaders::{Program, Shader, ShaderType};
+use gloog_math::Vec3;
 
 
 const VERTICES: [[Vec3; 2]; 3] = [

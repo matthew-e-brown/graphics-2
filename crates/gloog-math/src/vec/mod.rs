@@ -8,36 +8,36 @@ use bytemuck::{Pod, Zeroable};
 #[cfg(test)] mod tests;
 
 
-math_proc::create_vector! {
+gloog_macro::create_vector! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Vec2;
     f32, 2;
 }
 
-math_proc::create_vector! {
+gloog_macro::create_vector! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Vec3;
     f32, 3;
 }
 
-math_proc::create_vector! {
+gloog_macro::create_vector! {
     #[derive(Copy, Debug, PartialEq)]
     pub struct Vec4;
     f32, 4;
 }
 
 
-math_proc::vector_impl_scalar_ops!(Vec2, f32, 2);
-math_proc::vector_impl_scalar_ops!(Vec3, f32, 3);
-math_proc::vector_impl_scalar_ops!(Vec4, f32, 4);
+gloog_macro::vector_impl_scalar_ops!(Vec2, f32, 2);
+gloog_macro::vector_impl_scalar_ops!(Vec3, f32, 3);
+gloog_macro::vector_impl_scalar_ops!(Vec4, f32, 4);
 
-math_proc::vector_impl_self_ops!(Vec2, f32, 2);
-math_proc::vector_impl_self_ops!(Vec3, f32, 3);
-math_proc::vector_impl_self_ops!(Vec4, f32, 4);
+gloog_macro::vector_impl_self_ops!(Vec2, f32, 2);
+gloog_macro::vector_impl_self_ops!(Vec3, f32, 3);
+gloog_macro::vector_impl_self_ops!(Vec4, f32, 4);
 
-math_proc::vector_impl_dot_product!(Vec2, f32, 2);
-math_proc::vector_impl_dot_product!(Vec3, f32, 3);
-math_proc::vector_impl_dot_product!(Vec4, f32, 4);
+gloog_macro::vector_impl_dot_product!(Vec2, f32, 2);
+gloog_macro::vector_impl_dot_product!(Vec3, f32, 3);
+gloog_macro::vector_impl_dot_product!(Vec4, f32, 4);
 
 
 unsafe impl Zeroable for Vec2 {}
