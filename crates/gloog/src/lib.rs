@@ -3,19 +3,33 @@ pub use gl as bindings;
 use gl::types::*;
 use thiserror::Error;
 
-pub mod buffers;
-pub mod shaders;
-pub mod vao;
+mod buffers;
+mod shaders;
+mod vao;
+
+pub use buffers::*;
+pub use shaders::*;
+pub use vao::*;
 
 
 /// The error returned when attempting to convert a [`GLenum`] into an actual enum fails due to the given `GLenum` value
 /// not being a valid variant.
 #[derive(Error, Debug)]
 #[error("failed to match `GLenum` value '{0}' to an enum variant")]
-pub struct GLEnumConversionError(GLenum);
+pub struct EnumConversionError(GLenum);
 
 
-// ---------------------------------------------------------------------------------------------------------------------
+/// An error returned when OpenGL fails to create an object.
+///
+/// This error is returned by several functions, and contains no extra details. It corresponds to when an
+/// object-creation function returns zero (e.g., [`glCreateShader`] and [`glCreateProgram`]).
+///
+/// [`glCreateShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateShader.xhtml
+/// [`glCreateProgram`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateProgram.xhtml
+#[derive(Error, Debug)]
+#[error("OpenGL could not create {0} object")]
+pub struct ObjectCreationError(&'static str);
+// note: {0} should include article ("a shader" object) ("an ..." object)
 
 
 /// Declares a Rust macro with fields that map to specific [`GLenum`] values.
@@ -83,12 +97,12 @@ macro_rules! gl_enum {
         }
 
         impl TryFrom<GLenum> for $enum_name {
-            type Error = crate::GLEnumConversionError;
+            type Error = crate::EnumConversionError;
 
             fn try_from(value: GLenum) -> Result<Self, Self::Error> {
                 match value {
                     $( gl::$gl_name => Ok(Self::$field_name), )*
-                    other => Err(crate::GLEnumConversionError(other)),
+                    other => Err(crate::EnumConversionError(other)),
                 }
             }
         }
@@ -125,7 +139,8 @@ macro_rules! gl_enum {
     };
 }
 
-pub(crate) use gl_enum;
+// Make available to the rest of the crate
+use gl_enum;
 
 
 // ---------------------------------------------------------------------------------------------------------------------

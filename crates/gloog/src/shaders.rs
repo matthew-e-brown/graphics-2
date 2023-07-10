@@ -1,6 +1,6 @@
 use gl::types::*;
 
-use crate::gl_enum;
+use crate::{gl_enum, ObjectCreationError};
 
 
 gl_enum! {
@@ -17,10 +17,10 @@ gl_enum! {
 
 
 /// A shader object in OpenGL.
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct Shader {
-    name: GLuint,
-    ty: ShaderType,
+    pub(crate) name: GLuint,
+    shader_type: ShaderType,
 }
 
 impl Drop for Shader {
@@ -32,17 +32,104 @@ impl Drop for Shader {
 }
 
 impl Shader {
-    /// Returns the "name" (ID) that OpenGL uses for this shader under the hood.
-    pub fn gl_name(&self) -> GLuint {
-        self.name
+    /// Returns this shader's type.
+    pub fn shader_type(&self) -> ShaderType {
+        self.shader_type
     }
 
-    /// Returns this shader's type.
-    pub fn ty(&self) -> ShaderType {
-        self.ty
+    /// Creates a new shader.
+    ///
+    /// This function wraps [`glCreateShader`].
+    ///
+    /// [`glCreateShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateShader.xhtml
+    pub fn new(shader_type: ShaderType) -> Result<Self, ObjectCreationError> {
+        // SAFETY: Only other possible error is if `shaderType` is not a valid value, which our enum guarantees (see
+        // reference).
+        let name = unsafe { gl::CreateShader(shader_type.into()) };
+        if name != 0 {
+            Ok(Self { name, shader_type })
+        } else {
+            Err(ObjectCreationError("shader"))
+        }
+    }
+
+    /// Sets (replaces) the source code for this shader object.
+    ///
+    /// This function panics if:
+    ///
+    /// - `strings` has a length that does not fit into a [`GLsizei`] (usually [`i32`]), or
+    /// - any of the strings in `strings` has a length that does not fit into a [`GLint`] (usually [`i32`]).
+    ///
+    /// This function wraps [`glShaderSource`].
+    ///
+    /// [`glShaderSource`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glShaderSource.xhtml
+    pub fn set_source<I, S>(&mut self, strings: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let mut count = 0;
+        let mut ptrs = Vec::with_capacity(count);
+        let mut lens = Vec::with_capacity(count);
+
+        for (i, string) in strings.into_iter().enumerate() {
+            let string = string.as_ref();
+
+            count += 1;
+            ptrs[i] = string.as_bytes().as_ptr().cast();
+            lens[i] = string
+                .len()
+                .try_into()
+                .expect("shader source string size should be less than `GLint::MAX`");
+        }
+
+        let count = count
+            .try_into()
+            .expect("fewer than `GLsizei::MAX` shader source strings should be provided");
+
+        // SAFETY:
+        // - GL_INVALID_VALUE is generated if `shader` is not a valid shader -- covered by constructor
+        // - GL_INVALID_OPERATION is generated if `count` is less than zero -- handled by `usize` never being negative
+        unsafe {
+            gl::ShaderSource(self.name, count, ptrs.as_ptr(), lens.as_ptr());
+        }
+    }
+
+    /// Compiles this shader object using the source code string(s) that have been copied into it with
+    /// [`set_source`][Self::set_source].
+    ///
+    /// If unsuccessful, the shader's info log is returned from [`get_info_log`][Self::get_info_log].
+    ///
+    /// This function wraps calls to [`glGetShader`] and [`glCompileShader`].
+    ///
+    /// [`glGetShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetShader.xhtml
+    /// [`glCompileShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCompileShader.xhtml
+    pub fn compile(&mut self) -> Result<(), String> {
+        unsafe {
+            gl::CompileShader(self.name);
+        }
+
+        let success = unsafe {
+            let mut status = 0;
+            gl::GetShaderiv(self.name, gl::COMPILE_STATUS, &mut status);
+            status as GLboolean == gl::TRUE
+        };
+
+        if success {
+            Ok(())
+        } else {
+            let info_log = self.get_log_info().unwrap_or_else(|| "[NO SHADER INFO LOG]".to_string());
+            Err(info_log)
+        }
     }
 
     /// Gets any log information from the previous shader compilation attempt.
+    ///
+    /// This function wraps calls to both [`glGetShader`] (to get the buffer size to allocate for the `String`) and
+    /// [`glGetShaderInfoLog`].
+    ///
+    /// [`glGetShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetShader.xhtml
+    /// [`glGetShaderInfoLog`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetShaderInfoLog.xhtml
     pub fn get_log_info(&self) -> Option<String> {
         let mut log_size = 0;
         unsafe {
@@ -53,8 +140,7 @@ impl Shader {
             return None;
         }
 
-        // -1 because we don't need the NULL at the end
-        // (https://registry.khronos.org/OpenGL-Refpages/es2.0/xhtml/glGetShaderiv.xml)
+        // -1 because we don't need the NULL terminator at the end
         let mut buffer = vec![0; log_size as usize - 1];
         unsafe {
             gl::GetShaderInfoLog(self.name, log_size - 1, std::ptr::null_mut(), buffer.as_mut_ptr().cast());
@@ -62,52 +148,13 @@ impl Shader {
 
         Some(String::from_utf8_lossy(&buffer).into())
     }
-
-    /// Compiles the given source string into a new shader object.
-    ///
-    /// Upon failure, the shader's info log is returned.
-    pub fn compile(ty: ShaderType, src: &str) -> Result<Self, String> {
-        let name = unsafe { gl::CreateShader(ty.into()) };
-        let shader = Self { name, ty };
-
-        // Remove potentially breaking whitespace from start, before `#version`
-        let src = src.trim_start();
-        let src_ptr = src.as_bytes().as_ptr().cast();
-        let src_len = src
-            .as_bytes()
-            .len()
-            .try_into()
-            .map_err(|_| "shader source is too long".to_owned())?;
-
-        // Set the source for the shader and compile it
-        unsafe {
-            gl::ShaderSource(name, 1, &src_ptr, &src_len);
-            gl::CompileShader(name);
-        }
-
-        // Check if the compilation was successful
-        let success = unsafe {
-            let mut status = 0;
-            gl::GetShaderiv(name, gl::COMPILE_STATUS, &mut status);
-            status as GLboolean == gl::TRUE
-        };
-
-        if success {
-            Ok(shader)
-        } else {
-            let log_output = shader
-                .get_log_info()
-                .unwrap_or_else(|| "shader had no log information after failing to compile".to_owned());
-            Err(log_output)
-        }
-    }
 }
 
 
 /// An OpenGL program, made up multiple linked [shaders][Shader].
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct Program {
-    name: GLuint,
+    pub(crate) name: GLuint,
 }
 
 impl Drop for Program {
@@ -118,10 +165,56 @@ impl Drop for Program {
     }
 }
 
+// TODO: add documentation for program
+
 impl Program {
-    /// Returns the "name" (ID) that OpenGL uses for this program under the hood.
-    pub fn gl_name(&self) -> GLuint {
-        self.name
+    pub fn new() -> Result<Self, ObjectCreationError> {
+        let name = unsafe { gl::CreateProgram() };
+        if name != 0 {
+            Ok(Self { name })
+        } else {
+            Err(ObjectCreationError("a program"))
+        }
+    }
+
+    pub fn attach_shader(&mut self, shader: &Shader) {
+        // SAFETY: The only errors listed by the reference for this function are when the parameters are invalid.
+        unsafe {
+            gl::AttachShader(self.name, shader.name);
+        }
+    }
+
+    pub fn detach_shader(&mut self, shader: &Shader) {
+        // SAFETY: The only errors listed by the reference at for invalid arguments, or when the shader is not
+        // attached.
+        unsafe {
+            gl::DetachShader(self.name, shader.name);
+        }
+    }
+
+    pub fn link(&mut self) -> Result<(), String> {
+        unsafe {
+            gl::LinkProgram(self.name);
+        }
+
+        let success = unsafe {
+            let mut status = 0;
+            gl::GetProgramiv(self.name, gl::LINK_STATUS, &mut status);
+            status as GLboolean == gl::TRUE
+        };
+
+        if success {
+            Ok(())
+        } else {
+            let info_log = self.get_log_info().unwrap_or_else(|| "[NO PROGRAM INFO LOG]".to_string());
+            Err(info_log)
+        }
+    }
+
+    pub fn use_program(&self) {
+        unsafe {
+            gl::UseProgram(self.name);
+        }
     }
 
     /// Gets any log information from the previous program linkage attempt.
@@ -141,50 +234,5 @@ impl Program {
         }
 
         Some(String::from_utf8_lossy(&buffer).into())
-    }
-
-    /// Creates a program by linking the given shaders.
-    ///
-    /// Upon failure, the program's info log is returned.
-    pub fn link(shaders: &[Shader]) -> Result<Self, String> {
-        // Create our program
-        let name = unsafe { gl::CreateProgram() };
-        let program = Self { name };
-
-        // Attach all the shaders
-        for shader in shaders {
-            unsafe {
-                gl::AttachShader(program.name, shader.name);
-            }
-        }
-
-        // Then link them all into one big compiled binary
-        unsafe {
-            gl::LinkProgram(program.name);
-        }
-
-        // The wiki says that, now that they're all linked into one binary, we should detach the shader objects (whether
-        // or not we are going to delete them)
-        for shader in shaders {
-            unsafe {
-                gl::DetachShader(program.name, shader.name);
-            }
-        }
-
-        // Now error check
-        let success = unsafe {
-            let mut status = 0;
-            gl::GetProgramiv(name, gl::LINK_STATUS, &mut status);
-            status as GLboolean == gl::TRUE
-        };
-
-        if success {
-            Ok(program)
-        } else {
-            let log_output = program
-                .get_log_info()
-                .unwrap_or_else(|| "program had no log information after failing to link".to_owned());
-            Err(log_output)
-        }
     }
 }

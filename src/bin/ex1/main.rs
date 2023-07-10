@@ -1,9 +1,7 @@
 use std::mem::size_of;
 
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
-use gloog::bindings as gl;
-use gloog::buffers::{Buffer, BufferTarget, BufferUsage};
-use gloog::shaders::{Program, Shader, ShaderType};
+use gloog::{bindings as gl, Buffer, BufferTarget, BufferUsage, Program, Shader, ShaderType};
 use gloog_math::Vec3;
 
 
@@ -13,10 +11,6 @@ const VERTICES: [[Vec3; 2]; 3] = [
     [Vec3::new(0.5, -0.5, 0.0), Vec3::new(0.0, 1.0, 0.0)],
     [Vec3::new(0.0, 0.5, 0.0), Vec3::new(0.0, 0.0, 1.0)],
 ];
-
-// Just include the entire source-code of the shaders in the binary, for now
-const VERT_SHADER_STR: &str = include_str!("./shader-vert.glsl");
-const FRAG_SHADER_STR: &str = include_str!("./shader-frag.glsl");
 
 
 pub fn main() {
@@ -56,11 +50,8 @@ pub fn main() {
     // OpenGL rendering set up
     // -----------------------------------------------------------------
 
-    let program = Program::link(&[
-        Shader::compile(ShaderType::Vertex, VERT_SHADER_STR).unwrap(),
-        Shader::compile(ShaderType::Fragment, FRAG_SHADER_STR).unwrap(),
-    ])
-    .unwrap();
+    let program = compile_and_link_program().unwrap();
+    program.use_program();
 
     let mut vbo = Buffer::new();
     vbo.set_data(&VERTICES, BufferUsage::StaticDraw);
@@ -89,8 +80,6 @@ pub fn main() {
         unsafe {
             gl::ClearColor(0.17, 0.17, 0.17, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
-
-            gl::UseProgram(program.gl_name());
             gl::BindVertexArray(vao);
             gl::DrawArrays(gl::TRIANGLES, 0, VERTICES.len() as i32);
         }
@@ -108,4 +97,28 @@ pub fn main() {
             }
         }
     }
+}
+
+
+fn compile_and_link_program() -> Result<Program, String> {
+    let mut vert_shader = Shader::new(ShaderType::Vertex).map_err(|e| e.to_string())?;
+    let mut frag_shader = Shader::new(ShaderType::Fragment).map_err(|e| e.to_string())?;
+
+    // Just include the entire source-code of the shaders in the binary, for now
+    vert_shader.set_source(&[include_str!("./shader-vert.glsl")]);
+    frag_shader.set_source(&[include_str!("./shader-frag.glsl")]);
+
+    vert_shader.compile()?;
+    frag_shader.compile()?;
+
+    let mut program = Program::new().map_err(|e| e.to_string())?;
+    program.attach_shader(&vert_shader);
+    program.attach_shader(&frag_shader);
+
+    program.link()?;
+
+    program.detach_shader(&vert_shader);
+    program.detach_shader(&frag_shader);
+
+    Ok(program)
 }

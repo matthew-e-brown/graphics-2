@@ -77,7 +77,7 @@ gl_enum! {
 /// An arbitrary buffer in OpenGL.
 #[derive(Debug)]
 pub struct Buffer {
-    name: GLuint,
+    pub(crate) name: GLuint,
 }
 
 impl Drop for Buffer {
@@ -87,11 +87,6 @@ impl Drop for Buffer {
 }
 
 impl Buffer {
-    /// Returns the "name" (ID) that OpenGL uses for this buffer under the hood.
-    pub fn gl_name(&self) -> GLuint {
-        self.name
-    }
-
     /// Creates a new buffer object.
     ///
     /// This function maps to [`glCreateBuffers`] with a count of one.
