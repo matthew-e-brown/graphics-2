@@ -1,6 +1,6 @@
 use gl::types::*;
 
-use crate::{gl_enum, RawData};
+use crate::{gl_enum, BindGuard, Bindable, RawData, BindGuardMut};
 
 
 gl_enum! {
@@ -82,8 +82,14 @@ pub struct Buffer {
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        unsafe { gl::DeleteBuffers(1, &self.name) }
+        unsafe {
+            gl::DeleteBuffers(1, &self.name);
+        }
     }
+}
+
+impl Bindable for Buffer {
+    type BoundType = BoundBuffer;
 }
 
 impl Buffer {
@@ -92,7 +98,7 @@ impl Buffer {
     /// This function maps to [`glCreateBuffers`] with a count of one.
     ///
     /// [`glCreateBuffers`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateBuffers.xhtml
-    pub fn new() -> Self {
+    pub fn create() -> Self {
         let mut name = 0;
 
         unsafe {
@@ -109,7 +115,7 @@ impl Buffer {
     /// This function maps to [`glCreateBuffers`]
     ///
     /// [`glCreateBuffers`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateBuffers.xhtml
-    pub fn new_multiple(n: usize) -> Vec<Self> {
+    pub fn create_n(n: usize) -> Vec<Self> {
         assert!(n > 0, "cannot create zero buffer objects");
 
         let mut names = vec![0; n];
@@ -127,9 +133,27 @@ impl Buffer {
     /// This function maps to [`glBindBuffer`].
     ///
     /// [`glBindBuffer`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindBuffer.xhtml
-    pub fn bind(&self, target: BufferTarget) {
+    pub fn bind(&self, target: BufferTarget) -> BindGuard<Self> {
+        // Bind the buffer
         unsafe {
             gl::BindBuffer(target.into(), self.name);
+        }
+
+        // Then return the guard
+        BindGuard::new(BoundBuffer { target }, move || Self::unbind(target))
+    }
+
+    pub fn bind_mut(&mut self, target: BufferTarget) -> BindGuardMut<Self> {
+        unsafe {
+            gl::BindBuffer(target.into(), self.name);
+        }
+
+        BindGuardMut::new(BoundBuffer { target }, move || Self::unbind(target))
+    }
+
+    fn unbind(target: BufferTarget) {
+        unsafe {
+            gl::BindBuffer(target.into(), 0);
         }
     }
 
@@ -152,7 +176,7 @@ impl Buffer {
         }
     }
 
-    /// Binds a range within a buffer o an indexed buffer target.
+    /// Binds a range within a buffer to an indexed buffer target.
     ///
     /// This function panics if:
     ///
@@ -186,30 +210,13 @@ impl Buffer {
     ///
     /// [`glBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
     /// [`glNamedBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
-    pub fn set_data<'a, T: Into<RawData<'a>>>(&mut self, data: T, usage: BufferUsage) {
+    pub fn data<'a, T: Into<RawData<'a>>>(&mut self, data: T, usage: BufferUsage) {
         let data: RawData = data.into();
         let data: &[u8] = data.as_ref();
         let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
         unsafe {
             gl::NamedBufferData(self.name, size, data.as_ptr().cast(), usage.into());
         }
-    }
-
-    /// Creates and initializes the data store for the buffer **currently bound** at the given target.
-    ///
-    /// This function panics if `data` is too long: its size must fit inside of a [`GLsizeiptr`], which is _usually_ an
-    /// [`isize`].
-    ///
-    /// This function maps to [`glBufferData`]. If using OpenGL 4.5 or above, you should prefer using [`Self::set_data`]
-    /// instead, which bypasses the binding step by using [`glNamedBufferData`].
-    ///
-    /// [`glBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
-    /// [`glNamedBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
-    pub fn set_bound_data<'a, T: Into<RawData<'a>>>(target: BufferTarget, data: T, usage: BufferUsage) {
-        let data: RawData = data.into();
-        let data: &[u8] = data.as_ref();
-        let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
-        unsafe { gl::BufferData(target.into(), size, data.as_ptr().cast(), usage.into()) }
     }
 
     /// Creates the data store with for this buffer with uninitialized data.
@@ -231,7 +238,62 @@ impl Buffer {
         }
     }
 
-    /// Creates the data store for the buffer **currently bound** at the given target with uninitialized data.
+    /// Updates a subset of this buffer's data store.
+    ///
+    /// This function panics if:
+    ///
+    /// - `offset` does not fit into a [`GLintptr`], or
+    /// - `data`'s size does not fit into a [`GLsizeiptr`].
+    ///
+    /// This function maps to [`glNamedBufferSubData`] (available since OpenGL 4.5), _not_ [`glBufferSubData`]. This
+    /// allows it to be used even when the given buffer is not currently bound.
+    ///
+    /// [`glBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
+    /// [`glNamedBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
+    pub fn sub_data<'a, T: Into<RawData<'a>>>(&mut self, offset: isize, data: T) {
+        let data: RawData = data.into();
+        let data: &[u8] = data.as_ref();
+        let offset: GLintptr = offset.try_into().expect("offset should fit into `GLintptr`");
+        let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
+        unsafe {
+            gl::NamedBufferSubData(self.name, offset, size, data.as_ptr().cast());
+        }
+    }
+}
+
+
+pub struct BoundBuffer {
+    target: BufferTarget,
+}
+
+impl BoundBuffer {
+    pub fn target(&self) -> BufferTarget {
+        self.target
+    }
+
+    /// Creates and initializes the data store for this buffer.
+    ///
+    /// This function panics if `data` is too long: its size must fit inside of a [`GLsizeiptr`], which is _usually_ an
+    /// [`isize`].
+    ///
+    /// This function maps to [`glBufferData`]. If using OpenGL 4.5 or above, you may prefer using [`Buffer::data`],
+    /// which bypasses the binding step by using [`glNamedBufferData`].
+    ///
+    /// [`glBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
+    /// [`glNamedBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
+    pub fn data<'a, T: Into<RawData<'a>>>(&mut self, data: T, usage: BufferUsage) {
+        let data: RawData = data.into();
+        let data: &[u8] = data.as_ref();
+        let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
+
+        unsafe {
+            // By wrapping this function in a `BoundBuffer`, we know that this current buffer will always be the one
+            // bound to this specific target.
+            gl::BufferData(self.target.into(), size, data.as_ptr().cast(), usage.into());
+        }
+    }
+
+    /// Creates the data store for this buffer with uninitialized data.
     ///
     /// This function panics if `size` is does not fit inside of a [`GLsizeiptr`], which is _usually_ an [`isize`]. A
     /// [`usize`] is used in the function signature instead so that the caller does not have to convert sizes every
@@ -246,22 +308,23 @@ impl Buffer {
     /// step by using [`glNamedBufferData`].
     ///
     /// [`glBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
-    pub fn preallocate_bound(target: BufferTarget, size: usize, usage: BufferUsage) {
+    /// [`glNamedBufferData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferData.xhtml
+    pub fn preallocate(&mut self, size: usize, usage: BufferUsage) {
         let size: GLsizeiptr = size.try_into().expect("data size should fit into `GLsizeiptr`");
         unsafe {
-            gl::BufferData(target.into(), size, std::ptr::null(), usage.into());
+            gl::BufferData(self.target.into(), size, std::ptr::null(), usage.into());
         }
     }
 
-    /// Updates a subset of this buffer's data store.
+    /// Updates a subset of the data store for this buffer.
     ///
     /// This function panics if:
     ///
     /// - `offset` does not fit into a [`GLintptr`], or
     /// - `data`'s size does not fit into a [`GLsizeiptr`].
     ///
-    /// This function maps to [`glNamedBufferSubData`] (available since OpenGL 4.5), _not_ [`glBufferSubData`]. This
-    /// allows it to be used even when the given buffer is not currently bound.
+    /// This function maps to [`glBufferSubData`]. If using OpenGL 4.5 or above, you may prefer using
+    /// [`Buffer::sub_data`], which bypasses the binding step by using [`glNamedBufferSubData`].
     ///
     /// [`glBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
     /// [`glNamedBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
@@ -270,30 +333,9 @@ impl Buffer {
         let data: &[u8] = data.as_ref();
         let offset: GLintptr = offset.try_into().expect("offset should fit into `GLintptr`");
         let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
-        unsafe {
-            gl::NamedBufferSubData(self.name, offset, size, data.as_ptr().cast());
-        }
-    }
 
-    /// Updates a subset of the data store for the buffer **currently bound** at the given target.
-    ///
-    /// This function panics if:
-    ///
-    /// - `offset` does not fit into a [`GLintptr`], or
-    /// - `data`'s size does not fit into a [`GLsizeiptr`].
-    ///
-    /// This function maps to [`glBufferSubData`]. If using OpenGL 4.5 or above, you should prefer using
-    /// [`Self::set_sub_data`] instead, which bypasses the binding step by using [`glNamedBufferSubData`].
-    ///
-    /// [`glBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
-    /// [`glNamedBufferSubData`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBufferSubData.xhtml
-    pub fn set_bound_sub_data<'a, T: Into<RawData<'a>>>(target: BufferTarget, offset: isize, data: T) {
-        let data: RawData = data.into();
-        let data: &[u8] = data.as_ref();
-        let offset: GLintptr = offset.try_into().expect("offset should fit into `GLintptr`");
-        let size: GLsizeiptr = data.len().try_into().expect("data size should fit into `GLsizeiptr`");
         unsafe {
-            gl::BufferSubData(target.into(), offset, size, data.as_ptr().cast());
+            gl::BufferSubData(self.target.into(), offset, size, data.as_ptr().cast());
         }
     }
 }

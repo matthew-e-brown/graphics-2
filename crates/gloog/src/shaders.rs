@@ -118,7 +118,7 @@ impl Shader {
         if success {
             Ok(())
         } else {
-            let info_log = self.get_log_info().unwrap_or_else(|| "[NO SHADER INFO LOG]".to_string());
+            let info_log = self.get_info_log().unwrap_or_else(|| "[NO SHADER INFO LOG]".to_string());
             Err(info_log)
         }
     }
@@ -130,7 +130,7 @@ impl Shader {
     ///
     /// [`glGetShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetShader.xhtml
     /// [`glGetShaderInfoLog`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetShaderInfoLog.xhtml
-    pub fn get_log_info(&self) -> Option<String> {
+    pub fn get_info_log(&self) -> Option<String> {
         let mut log_size = 0;
         unsafe {
             gl::GetShaderiv(self.name, gl::INFO_LOG_LENGTH, &mut log_size);

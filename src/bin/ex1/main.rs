@@ -53,9 +53,9 @@ pub fn main() {
     let program = compile_and_link_program().unwrap();
     program.use_program();
 
-    let mut vbo = Buffer::new();
-    vbo.set_data(&VERTICES, BufferUsage::StaticDraw);
-    vbo.bind(BufferTarget::ArrayBuffer);
+    let mut vbo = Buffer::create();
+    let mut vbo_bound = vbo.bind_mut(BufferTarget::ArrayBuffer);
+    vbo_bound.data(&VERTICES, BufferUsage::StaticDraw);
 
     let vao = unsafe {
         let mut vao = 0;
