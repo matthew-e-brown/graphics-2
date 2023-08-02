@@ -84,7 +84,6 @@ dependencies = [
 name = "gloog"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "gl",
  "thiserror",
 ]
@@ -111,6 +110,7 @@ dependencies = [
 name = "graphics-2"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "glfw",
  "gloog",
  "gloog-math",

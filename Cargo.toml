@@ -10,6 +10,7 @@ edition = "2021"
 gloog = { path = "crates/gloog" }
 gloog-math = { path = "crates/gloog-math" }
 # 3rd party deps
+bytemuck = "1.13.1"
 glfw = "0.52.0"
 
 
