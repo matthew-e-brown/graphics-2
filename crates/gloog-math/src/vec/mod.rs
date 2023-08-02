@@ -9,19 +9,19 @@ use bytemuck::{Pod, Zeroable};
 
 
 gloog_macro::create_vector! {
-    #[derive(Copy, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq, Pod, Zeroable)]
     pub struct Vec2;
     f32, 2;
 }
 
 gloog_macro::create_vector! {
-    #[derive(Copy, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq, Pod, Zeroable)]
     pub struct Vec3;
     f32, 3;
 }
 
 gloog_macro::create_vector! {
-    #[derive(Copy, Debug, PartialEq)]
+    #[derive(Copy, Debug, PartialEq, Pod, Zeroable)]
     pub struct Vec4;
     f32, 4;
 }
@@ -38,12 +38,3 @@ gloog_macro::vector_impl_self_ops!(Vec4, f32, 4);
 gloog_macro::vector_impl_dot_product!(Vec2, f32, 2);
 gloog_macro::vector_impl_dot_product!(Vec3, f32, 3);
 gloog_macro::vector_impl_dot_product!(Vec4, f32, 4);
-
-
-unsafe impl Zeroable for Vec2 {}
-unsafe impl Zeroable for Vec3 {}
-unsafe impl Zeroable for Vec4 {}
-
-unsafe impl Pod for Vec2 {}
-unsafe impl Pod for Vec3 {}
-unsafe impl Pod for Vec4 {}
