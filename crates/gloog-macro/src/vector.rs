@@ -4,7 +4,7 @@ use indefinite::indefinite_article_only_capitalized;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_quote, ExprBinary, Ident, LitInt, Token};
+use syn::{parse_quote, Expr, ExprBinary, Ident, LitInt, Token};
 
 use crate::common::{self, BaseCreationInput, BaseSimpleInput};
 
@@ -69,7 +69,11 @@ pub fn create_base(input: CreationInput) -> TokenStream {
     } = &input;
 
     let doc = {
-        let el = num_elements.to_string();
+        #[rustfmt::skip]
+        let el = [ "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine" ]
+            .get(*num_elements)
+            .map(ToString::to_string)
+            .unwrap_or_else(|| num_elements.to_string());
         let an = indefinite_article_only_capitalized(&el);
         let ty = quote!(#inner_type).to_string();
         format!("{an} {el}-element column-vector of `{ty}`s.")
@@ -91,6 +95,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
     output.extend(impl_constructor(&input));
     output.extend(impl_indexing(&input));
     output.extend(impl_fallible_conversion(&input));
+    output.extend(impl_getters(&input));
     output.extend(common::impl_container_conversions(
         struct_name,
         &parse_quote!([#inner_type; #num_elements]),
@@ -180,6 +185,32 @@ fn impl_fallible_conversion(input: &CreationInput) -> TokenStream {
                 Ok(Self { v })
             }
         }
+    }
+}
+
+
+fn impl_getters(input: &CreationInput) -> TokenStream {
+    let CreationInput {
+        base: BaseCreationInput { struct_name, inner_type, .. },
+        num_elements,
+    } = input;
+    let num = *num_elements;
+
+    if num <= 4 {
+        let names = ["x", "y", "z", "w"].iter().take(num).map(|s| Ident::new(s, Span::call_site()));
+        let indices = (0..num).map(|n| -> Expr { parse_quote!(#n) });
+
+        quote! {
+            impl #struct_name {
+                #(
+                    pub const fn #names(&self) -> #inner_type {
+                        self.v[#indices]
+                    }
+                )*
+            }
+        }
+    } else {
+        TokenStream::new()
     }
 }
 
