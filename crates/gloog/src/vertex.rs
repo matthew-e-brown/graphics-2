@@ -25,7 +25,7 @@ pub fn create_vertex_arrays(n: usize) -> Vec<VertexArray> {
         gl::CreateVertexArrays(n, names.as_mut_ptr());
     }
 
-    names.into_iter().map(|name| VertexArray::new(name)).collect()
+    names.into_iter().map(VertexArray::new).collect()
 }
 
 

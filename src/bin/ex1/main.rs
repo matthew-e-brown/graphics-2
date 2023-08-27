@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
 use gloog as gl;
-use gloog::types::{BufferMask, BufferTarget, BufferUsage, DrawMode, Program, ShaderType, VertexAttribType};
+use gloog::types::{ClearMask, BufferTarget, BufferUsage, DrawMode, Program, ShaderType, VertexAttribType};
 use gloog_math::Vec3;
 
 
@@ -73,7 +73,7 @@ pub fn main() {
 
     while !window.should_close() {
         gl::clear_color(0.17, 0.17, 0.17, 1.0);
-        gl::clear(BufferMask::COLOR);
+        gl::clear(ClearMask::COLOR);
         gl::bind_vertex_array(&vao);
         gl::draw_arrays(DrawMode::Triangles, 0, VERTICES.len());
 

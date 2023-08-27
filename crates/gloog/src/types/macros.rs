@@ -178,7 +178,7 @@ macro_rules! gl_bitfield {
         }
 
 
-        impl ::core::fmt::Debug for BufferMask {
+        impl ::core::fmt::Debug for $struct_name {
             fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
                 // Take a list of all the possible flags as strings, check if self has each of them, then join together
                 // separated by `|`.

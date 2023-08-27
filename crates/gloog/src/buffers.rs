@@ -25,7 +25,7 @@ pub fn create_buffers(n: usize) -> Vec<Buffer> {
         gl::CreateBuffers(n, names.as_mut_ptr());
     }
 
-    names.into_iter().map(|name| Buffer::new(name)).collect()
+    names.into_iter().map(Buffer::new).collect()
 }
 
 

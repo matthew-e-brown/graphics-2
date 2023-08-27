@@ -197,7 +197,7 @@ pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
     common::impl_cw_ops(
         common::CWOperatorSettings {
             lhs_type: &struct_name.into(),
-            rhs_type: &inner_type.into(),
+            rhs_type: &inner_type,
             lhs_indexer: Some(&|ident, n| parse_quote! { #ident[#n] }),
             rhs_indexer: None,
             total_elements: num_elements,

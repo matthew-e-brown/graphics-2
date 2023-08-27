@@ -87,7 +87,7 @@ pub fn create_base(input: CreationInput) -> TokenStream {
     } = &input;
 
     let doc = {
-        let xy = format!("{num_rows}x{num_cols}");
+        let xy = format!("{num_rows}\u{00d7}{num_cols}");
         let an = indefinite_article_only_capitalized(&xy);
         let ty = quote!(#inner_type).to_string();
         format!("{an} {xy} matrix of `{ty}`s.")
@@ -347,7 +347,7 @@ pub fn impl_scalar_ops(input: SimpleInput) -> TokenStream {
     common::impl_cw_ops(
         common::CWOperatorSettings {
             lhs_type: &struct_name.into(),
-            rhs_type: &inner_type.into(),
+            rhs_type: &inner_type,
             lhs_indexer: Some(&|ident, n| {
                 let (r, c) = index_1d_to_2d(n, num_rows, num_cols);
                 parse_quote! { #ident[(#r, #c)] }

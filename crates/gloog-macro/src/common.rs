@@ -78,7 +78,7 @@ impl BinaryOperator {
     /// - The trait's function (`add`)
     /// - The actual binary operator to apply to the LHS and RHS (`+`)
     #[rustfmt::skip]
-    pub fn to_pieces(&self) -> (Path, Ident, BinOp) {
+    pub fn pieces(&self) -> (Path, Ident, BinOp) {
         use syn::parse_quote as pq;
         match self {
             Self::Addition          => (pq! { ::core::ops::Add }, pq! { add }, pq! { + }),
@@ -90,7 +90,7 @@ impl BinaryOperator {
 
     /// The same as [`to_pieces`][Self::to_pieces], but for assignment operators (`+=`).
     #[rustfmt::skip]
-    pub fn to_assignment_pieces(&self) -> (Path, Ident, BinOp) {
+    pub fn assignment_pieces(&self) -> (Path, Ident, BinOp) {
         use syn::parse_quote as pq;
         match self {
             Self::Addition          => (pq! { ::core::ops::AddAssign }, pq! { add_assign }, pq! { += }),
@@ -151,9 +151,9 @@ pub fn impl_cw_ops(
     #[rustfmt::skip]
     let ref_configs: [(Generics, Type, Type); 4] = [
         (pq! { <      > }, pq! {     #lhs_base_type }, pq! {     #rhs_base_type }),
-        (pq! { <'a    > }, pq! { &'a #lhs_base_type }, pq! {     #rhs_base_type }),
-        (pq! { <    'b> }, pq! {     #lhs_base_type }, pq! { &'b #rhs_base_type }),
-        (pq! { <'a, 'b> }, pq! { &'a #lhs_base_type }, pq! { &'b #rhs_base_type }),
+        (pq! { <'l    > }, pq! { &'l #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <    'r> }, pq! {     #lhs_base_type }, pq! { &'r #rhs_base_type }),
+        (pq! { <'l, 'r> }, pq! { &'l #lhs_base_type }, pq! { &'r #rhs_base_type }),
     ];
 
     /*
@@ -165,9 +165,9 @@ pub fn impl_cw_ops(
     #[rustfmt::skip]
     let mut_configs: [(Generics, Type, Type); 4] = [
         (pq! { <      > }, pq! {         #lhs_base_type }, pq! {     #rhs_base_type }),
-        (pq! { <'a    > }, pq! { &'a mut #lhs_base_type }, pq! {     #rhs_base_type }),
-        (pq! { <    'b> }, pq! {         #lhs_base_type }, pq! { &'b #rhs_base_type }),
-        (pq! { <'a, 'b> }, pq! { &'a mut #lhs_base_type }, pq! { &'b #rhs_base_type }),
+        (pq! { <'l    > }, pq! { &'l mut #lhs_base_type }, pq! {     #rhs_base_type }),
+        (pq! { <    'r> }, pq! {         #lhs_base_type }, pq! { &'r #rhs_base_type }),
+        (pq! { <'l, 'r> }, pq! { &'l mut #lhs_base_type }, pq! { &'r #rhs_base_type }),
     ];
 
     let mut output = TokenStream::new();
@@ -182,14 +182,8 @@ pub fn impl_cw_ops(
         let lhs_ident = &lhs_ident;
         let rhs_ident = &rhs_ident;
         (0..total_elements).map(move |n| {
-            let lhs_expr = lhs_indexer
-                .as_ref()
-                .map(|f| f(lhs_ident, n))
-                .unwrap_or_else(|| parse_quote! { #lhs_ident });
-            let rhs_expr = rhs_indexer
-                .as_ref()
-                .map(|f| f(rhs_ident, n))
-                .unwrap_or_else(|| parse_quote! { #rhs_ident });
+            let lhs_expr = lhs_indexer.as_ref().map(|f| f(lhs_ident, n)).unwrap_or_else(|| pq!(#lhs_ident));
+            let rhs_expr = rhs_indexer.as_ref().map(|f| f(rhs_ident, n)).unwrap_or_else(|| pq!(#rhs_ident));
             quote! { #lhs_expr #op_op #rhs_expr }
         })
     };
@@ -197,7 +191,7 @@ pub fn impl_cw_ops(
     for (is_commutative, operator) in operators {
         // General operators
         for (op_bounds, lhs_type, rhs_type) in &ref_configs {
-            let (op_trait, op_func, op_op) = operator.to_pieces();
+            let (op_trait, op_func, op_op) = operator.pieces();
             let constructor_args = generate_expressions(op_op).collect::<Vec<_>>();
 
             // Build a bunch of constructor arguments that all look like `lhs[idx] [op] rhs[idx]`. Then we'll pass all
@@ -229,7 +223,7 @@ pub fn impl_cw_ops(
 
         // Assignment variants
         for (op_bounds, lhs_type, rhs_type) in &mut_configs {
-            let (op_trait, op_func, op_op) = operator.to_assignment_pieces();
+            let (op_trait, op_func, op_op) = operator.assignment_pieces();
             let assignment_statements = generate_expressions(op_op);
 
             output.extend(quote! {
@@ -266,8 +260,8 @@ pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, memb
             }
         }
 
-        // - `&[f32; 3]` as `&mut Vec3`
-        // - `&[[f32; 4]; 4]` as `&mut Mat4`
+        // - `&[f32; 3]` as `&Vec3`
+        // - `&[[f32; 4]; 4]` as `&Mat4`
         impl ::core::convert::AsRef<#struct_name> for #wrapped_type {
             fn as_ref(&self) -> &#struct_name {
                 // SAFETY: `repr(transparent)` on vector and matrix structs makes this conversion guaranteed

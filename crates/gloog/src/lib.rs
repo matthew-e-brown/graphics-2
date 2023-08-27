@@ -45,7 +45,7 @@ pub fn clear_color(red: f32, green: f32, blue: f32, alpha: f32) {
 }
 
 
-pub fn clear(mask: BufferMask) {
+pub fn clear(mask: ClearMask) {
     unsafe {
         gl::Clear(mask.into());
     }
