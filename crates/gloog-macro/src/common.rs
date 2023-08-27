@@ -286,6 +286,38 @@ pub fn impl_container_conversions(struct_name: &Ident, wrapped_type: &Type, memb
             }
         }
 
+        // - `Vec3` or `&Vec3` as a `&[f32; 3]`
+        // - `Mat4` or `&Mat4` as a `&[[f32; 4]; 4]`
+        impl ::core::borrow::Borrow<#wrapped_type> for #struct_name {
+            fn borrow(&self) -> &#wrapped_type {
+                self.as_ref()
+            }
+        }
+
+        // - `[f32; 3]` or `&[f32; 3]` as a `&Vec3`
+        // - `[[f32; 4]; 4]` or `&[[f32; 4]; 4]` as a `&Mat4`
+        impl ::core::borrow::Borrow<#struct_name> for #wrapped_type {
+            fn borrow(&self) -> &#struct_name {
+                self.as_ref()
+            }
+        }
+
+        // - `Vec3` or `&mut Vec3` as a `&mut [f32; 3]`
+        // - `Mat4` or `&mut Mat4` as a `&mut [[f32; 4]; 4]`
+        impl ::core::borrow::BorrowMut<#wrapped_type> for #struct_name {
+            fn borrow_mut(&mut self) -> &mut #wrapped_type {
+                self.as_mut()
+            }
+        }
+
+        // - `[f32; 3]` or `&mut [f32; 3]` as a `&mut Vec3`
+        // - `[[f32; 4]; 4]` or `&mut [[f32; 4]; 4]` as a `&mut Mat4`
+        impl ::core::borrow::BorrowMut<#struct_name> for #wrapped_type {
+            fn borrow_mut(&mut self) -> &mut #struct_name {
+                self.as_mut()
+            }
+        }
+
         // -------------------------------------------------------------------------------------
         // Owned conversions (copies)
         // -------------------------------------------------------------------------------------
