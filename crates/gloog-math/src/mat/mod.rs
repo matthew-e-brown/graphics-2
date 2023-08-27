@@ -33,3 +33,7 @@ gloog_macro::matrix_impl_scalar_ops!(Mat4, f32, 4, 4);
 gloog_macro::matrix_impl_self_ops!(Mat2, f32, 2, 2);
 gloog_macro::matrix_impl_self_ops!(Mat3, f32, 3, 3);
 gloog_macro::matrix_impl_self_ops!(Mat4, f32, 4, 4);
+
+gloog_macro::matrix_cols_as_vector!(Mat2 -> crate::vec::Vec2);
+gloog_macro::matrix_cols_as_vector!(Mat3 -> crate::vec::Vec3);
+gloog_macro::matrix_cols_as_vector!(Mat4 -> crate::vec::Vec4);

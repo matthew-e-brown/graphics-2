@@ -255,3 +255,56 @@ export_macro! {
     matrix::impl_self_ops,
     matrix::SimpleInput,
 }
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------------------
+
+
+mod other {
+    use proc_macro2::TokenStream;
+    use quote::quote;
+    use syn::parse::{Parse, ParseStream};
+    use syn::{Token, Type, TypePath};
+
+    pub(crate) struct MatToVecInput {
+        pub matrix: TypePath,
+        pub vector: Type,
+    }
+
+    impl Parse for MatToVecInput {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let matrix = input.parse()?;
+            input.parse::<Token![->]>()?;
+            let vector = input.parse()?;
+            Ok(Self { matrix, vector })
+        }
+    }
+
+
+    pub(crate) fn cols_as_vector(input: MatToVecInput) -> TokenStream {
+        let MatToVecInput { matrix, vector } = input;
+        quote! {
+            impl ::core::ops::Index<usize> for #matrix {
+                type Output = #vector;
+
+                fn index(&self, index: usize) -> &Self::Output {
+                    self.m.index(index).as_ref()
+                }
+            }
+
+            impl ::core::ops::IndexMut<usize> for #matrix {
+                fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+                    self.m.index_mut(index).as_mut()
+                }
+            }
+        }
+    }
+}
+
+
+export_macro! {
+    matrix_cols_as_vector,
+    other::cols_as_vector,
+    other::MatToVecInput,
+}
