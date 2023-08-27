@@ -1,7 +1,3 @@
-//! Matrices.
-//!
-//! See [the crate-level documentation](crate) for general details that pertain to all data structures in the crate.
-
 use bytemuck::{Pod, Zeroable};
 
 
