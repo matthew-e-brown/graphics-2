@@ -2,8 +2,8 @@ use std::mem::size_of;
 
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
-use gloog as gl;
-use gloog::types::{ClearMask, BufferTarget, BufferUsage, DrawMode, Program, ShaderType, VertexAttribType};
+use gloog_core as gl;
+use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, Program, ShaderType, VertexAttribType};
 use gloog_math::Vec3;
 
 
