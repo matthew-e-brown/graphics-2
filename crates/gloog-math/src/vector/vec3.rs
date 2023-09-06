@@ -11,7 +11,7 @@ pub struct Vec3 {
     pub z: f32,
 }
 
-super::impl_vector_basics!(Vec3, f32, 3; { 0: x, 1: y, 2: z });
+super::impl_vector_basics!(Vec3, f32, 3, { 0: x, 1: y, 2: z });
 
 impl Vec3 {
     pub const UNIT_I: Vec3 = Vec3::new(1.0, 0.0, 0.0);

@@ -12,13 +12,13 @@ pub struct Vec4 {
     pub w: f32,
 }
 
-super::impl_vector_basics!(Vec4, f32, 4; { 0: x, 1: y, 2: z, 3: w });
+super::impl_vector_basics!(Vec4, f32, 4, { 0: x, 1: y, 2: z, 3: w });
 
 impl Vec4 {
-    pub const UNIT_W: Vec4 = Vec4::new(0.0, 0.0, 0.0, 1.0);
     pub const UNIT_X: Vec4 = Vec4::new(1.0, 0.0, 0.0, 0.0);
     pub const UNIT_Y: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
     pub const UNIT_Z: Vec4 = Vec4::new(0.0, 0.0, 1.0, 0.0);
+    pub const UNIT_W: Vec4 = Vec4::new(0.0, 0.0, 0.0, 1.0);
 
     // --------------------------------------------------------------------------------------------
 

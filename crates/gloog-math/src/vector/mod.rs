@@ -11,7 +11,7 @@ pub use vec4::*;
 ///
 /// Note to self: vectors using this **must** be `repr(C)`!
 macro_rules! impl_vector_basics {
-    ($name:ident, $inner:ty, $count:literal; { $($n:literal: $x:ident),+ }) => {
+    ($name:ident, $inner:ty, $count:literal, { $($n:literal: $x:ident),+ }) => {
         impl ::core::default::Default for $name {
             fn default() -> Self {
                 Self::zeroed()
@@ -22,8 +22,6 @@ macro_rules! impl_vector_basics {
         // Operators
         // =============================================================================================================
 
-        $crate::operator!(+ #[inline] |a: $name, b: $name| -> $name { $name { $($x: a.$x + b.$x),* } });
-        $crate::operator!(- #[inline] |a: $name, b: $name| -> $name { $name { $($x: a.$x - b.$x),* } });
         $crate::operator!(+ (commutative) #[inline] |a: $name, b: $inner| -> $name { $name { $($x: a.$x + b),* } });
         $crate::operator!(- (commutative) #[inline] |a: $name, b: $inner| -> $name { $name { $($x: a.$x - b),* } });
         $crate::operator!(* (commutative) #[inline] |a: $name, b: $inner| -> $name { $name { $($x: a.$x * b),* } });
@@ -32,6 +30,11 @@ macro_rules! impl_vector_basics {
         $crate::operator!(-= #[inline] |a: &mut $name, b: $inner| { $(a.$x -= b;)* });
         $crate::operator!(*= #[inline] |a: &mut $name, b: $inner| { $(a.$x *= b;)* });
         $crate::operator!(/= #[inline] |a: &mut $name, b: $inner| { $(a.$x /= b;)* });
+
+        $crate::operator!(+ #[inline] |a: $name, b: $name| -> $name { $name { $($x: a.$x + b.$x),* } });
+        $crate::operator!(- #[inline] |a: $name, b: $name| -> $name { $name { $($x: a.$x - b.$x),* } });
+        $crate::operator!(+= #[inline] |a: &mut $name, b: $name| { $(a.$x += b.$x;)* });
+        $crate::operator!(-= #[inline] |a: &mut $name, b: $name| { $(a.$x -= b.$x;)* });
 
         // =============================================================================================================
         // Core and mathematic implementations
