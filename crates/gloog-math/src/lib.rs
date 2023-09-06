@@ -1,63 +1,112 @@
-//! Mathematics data structures for working with OpenGL.
-//!
-//! Currently, this crate contains [*matrices*][mod@mat] and [*vectors*][mod@vec]. See the documentations for those two
-//! modules for more details. Their items are re-exported from this crate.
-//!
-//!
-//! # Operators
-//!
-//! All vectors and matrices have standard, component-wise operations defined on them for [`Mul`] and [`Div`] with their
-//! inner type as the right-hand operand (e.g., `Mat4 * f32`, all elements are multiplied by the same number). They also
-//! have standard component-wise operations defined on them for [`Add`] and [`Sub`] between themselves (`Mat4 + Mat4`).
-//!
-//! More complex operations, like vector dot and cross products, are implemented as methods. They are called on the
-//! left-hand operand (e.g., `vec3.dot(other_vec3)` or `Vec3::dot(vec3, other_vec3)`). These methods are detailed in the
-//! [`mat`] and [`vec`] modules respectively.
-//!
-//!
-//! # Conversions
-//!
-//! All vectors and matrices implement
-//!
-//! - [`From`] and [`Into`],
-//! - [`AsRef`] and [`AsMut`], and
-//! - [`Borrow`] and [`BorrowMut`]
-//!
-//! for their respective inner types, and the inner types implement them the other way. Notably, all structures also
-//! implement bytemuck's [`Pod`] and [`Zeroable`]. These two trait implementations may be of more use for some cases.
-//! All structures are `repr(transparent)`.
-//!
-//! With all of these trait implementations, casting and transforming back and forth between the underlying
-//! representation (`Vec3` ⇄ `[f32; 3]` / `Mat2` ⇄ `[[f32; 2]; 2]`) should be simple.
-//!
-//!
-//! [`Add`]:        core::ops::Add
-//! [`Sub`]:        core::ops::Sub
-//! [`Mul`]:        core::ops::Mul
-//! [`Div`]:        core::ops::Div
-//! [`From`]:       core::convert::From
-//! [`Into`]:       core::convert::Into
-//! [`AsRef`]:      core::convert::AsRef
-//! [`AsMut`]:      core::convert::AsMut
-//! [`Borrow`]:     core::borrow::Borrow
-//! [`BorrowMut`]:  core::borrow::BorrowMut
-//! [`Pod`]:        bytemuck::Pod
-//! [`Zeroable`]:   bytemuck::Zeroable
+pub mod matrix;
+pub mod vector;
 
 
-// TODO: document matrix- and vector-specific functionality and operations in the docs of each of the two modules below.
+macro_rules! strip_plus {
+    (+ $($t:tt)*) => ($($t)*);
+}
 
 
-/// Matrices.
-///
-/// See [the crate-level documentation](crate) for general details that pertain to all data structures in the crate.
-pub mod mat;
+/// Implements an operator for `A ⇄ B`, `&A ⇄ B`, `A ⇄ &B`, and `&A ⇄ &B` using the same body.
+macro_rules! operator {
+    // Consumer-facing macro variants
+    // ================================================================================
+
+    // Regular binary operators
+    ($op:tt $(#[$attr:meta])* |$lhs_name:ident: $lhs_type:ty, $rhs_name:ident: $rhs_type:ty$(,)?| -> $out_type:ty $body:block) => {
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, $lhs_type, $rhs_name, $rhs_type, $out_type, $body);
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, &$lhs_type, $rhs_name, $rhs_type, $out_type, $body);
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, $lhs_type, $rhs_name, &$rhs_type, $out_type, $body);
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, &$lhs_type, $rhs_name, &$rhs_type, $out_type, $body);
+    };
+
+    // Assignment operators
+    ($op:tt $(#[$attr:meta])* |$lhs_name:ident: &mut $lhs_type:ty, $rhs_name:ident: $rhs_type:ty$(,)?| $body:block) => {
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, $lhs_type, $rhs_name, $rhs_type, $body);
+        $crate::operator!(@ $op, $(#[$attr])*, $lhs_name, $lhs_type, $rhs_name, &$rhs_type, $body);
+    };
+
+    // Unary operators
+    ($op:tt $(#[$attr:meta])* |$name:ident: $type:ty$(,)?| -> $out_type:ty $body:block) => {
+        $crate::operator!(@ $op, $(#[$attr])*, name, $type, $out_type, $body);
+    };
+
+    // Commutative binary operators (simply call the non-commutative version twice)
+    ($op:tt (commutative) $(#[$attr:meta])* |$lhs_name:ident: $lhs_type:ty, $rhs_name:ident: $rhs_type:ty$(,)?| -> $out_type:ty $body:block) => {
+        $crate::operator!($op $(#[$attr])* |$lhs_name:$lhs_type, $rhs_name:$rhs_type| -> $out_type $body);
+        $crate::operator!($op $(#[$attr])* |$rhs_name:$rhs_type, $lhs_name:$lhs_type| -> $out_type $body);
+    };
+
+    // Internal macro variants
+    // ================================================================================
+
+    // Parsing operator tokens to trait names
+    // -------------------------------------------
+
+    (@ +, $($rest:tt)*) => ($crate::operator!(@@ Add, add, $($rest)*););
+    (@ -, $($rest:tt)*) => ($crate::operator!(@@ Sub, sub, $($rest)*););
+    (@ *, $($rest:tt)*) => ($crate::operator!(@@ Mul, mul, $($rest)*););
+    (@ /, $($rest:tt)*) => ($crate::operator!(@@ Div, div, $($rest)*););
+    (@ %, $($rest:tt)*) => ($crate::operator!(@@ Rem, rem, $($rest)*););
+    (@ &, $($rest:tt)*) => ($crate::operator!(@@ BitAnd, bit_and, $($rest)*););
+    (@ |, $($rest:tt)*) => ($crate::operator!(@@ BitOr, bit_or, $($rest)*););
+    (@ ^, $($rest:tt)*) => ($crate::operator!(@@ BitOr, bit_or, $($rest)*););
+    (@ <<, $($rest:tt)*) => ($crate::operator!(@@ Shl, shl, $($rest)*););
+    (@ >>, $($rest:tt)*) => ($crate::operator!(@@ Shr, shr, $($rest)*););
+
+    (@ +=, $($rest:tt)*) => ($crate::operator!(@@ AddAssign, add_assign, $($rest)*););
+    (@ -=, $($rest:tt)*) => ($crate::operator!(@@ SubAssign, sub_assign, $($rest)*););
+    (@ *=, $($rest:tt)*) => ($crate::operator!(@@ MulAssign, mul_assign, $($rest)*););
+    (@ /=, $($rest:tt)*) => ($crate::operator!(@@ DivAssign, div_assign, $($rest)*););
+    (@ %=, $($rest:tt)*) => ($crate::operator!(@@ RemAssign, rem_assign, $($rest)*););
+    (@ &=, $($rest:tt)*) => ($crate::operator!(@@ BitAndAssign, bit_and_assign, $($rest)*););
+    (@ |=, $($rest:tt)*) => ($crate::operator!(@@ BitOrAssign, bit_or_assign, $($rest)*););
+    (@ ^=, $($rest:tt)*) => ($crate::operator!(@@ BitOrAssign, bit_or_assign, $($rest)*););
+    (@ <<=, $($rest:tt)*) => ($crate::operator!(@@ ShlAssign, shl_assign, $($rest)*););
+    (@ >>=, $($rest:tt)*) => ($crate::operator!(@@ ShrAssign, shr_assign, $($rest)*););
+
+    (@ -, $($rest:tt)*) => ($crate::operator!(@@ Neg, neg, $($rest)*););
+    (@ !, $($rest:tt)*) => ($crate::operator!(@@ Not, not, $($rest)*););
+
+    // Trait implementation
+    // -------------------------------------------
+
+    // Binary operators
+    (@@ $op_trait:ident, $op_fn:ident, $(#[$attr:meta])*, $lhs_name:ident, $lhs_type:ty, $rhs_name:ident, $rhs_type:ty, $out_type:ty, $body:block) => {
+        impl ::core::ops::$op_trait<$rhs_type> for $lhs_type {
+            type Output = $out_type;
+
+            $(#[$attr])*
+            fn $op_fn(self, $rhs_name: $rhs_type) -> Self::Output {
+                let $lhs_name = self;
+                $body
+            }
+        }
+    };
+
+    // Assignment operators
+    (@@ $op_trait:ident, $op_fn:ident, $(#[$attr:meta])*, $lhs_name:ident, $lhs_type:ty, $rhs_name:ident, $rhs_type:ty, $body:block) => {
+        impl ::core::ops::$op_trait<$rhs_type> for $lhs_type {
+            $(#[$attr])*
+            fn $op_fn(&mut self, $rhs_name: $rhs_type) {
+                let $lhs_name = self;
+                $body
+            }
+        }
+    };
+
+    // Unary operators
+    (@@ $op_trait:ident, $op_fn:ident, $(#[$attr:meta])*, $name:ident, $type:ty, $out_type:ty, $body:block) => {
+        impl ::core::ops::$op_trait for $type {
+            type Output = $out_type;
+            $(#[$attr])*
+            fn $op_fn(self) -> Self::Output {
+                let $name = self;
+                $body
+            }
+        }
+    };
+}
 
 
-/// Vectors.
-///
-/// See [the crate-level documentation](crate) for general details that pertain to all data structures in the crate.
-pub mod vec;
-
-pub use mat::*;
-pub use vec::*;
+pub(crate) use {operator, strip_plus};
