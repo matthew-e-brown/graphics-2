@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use super::Vec2;
+use super::{Vec2, Vec4};
 
 
 #[repr(C)]
@@ -42,15 +42,15 @@ impl Vec3 {
 
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`Vec3`] from a [`Vec2`] and a float.
+    /// Creates a new [`Vec4`] from this vector's `x`, `y`, and `z` components and a given `w` component.
     #[inline]
-    pub const fn from_xy(xy: Vec2, z: f32) -> Self {
-        Self::new(xy.x, xy.y, z)
+    pub const fn to4(&self, w: f32) -> Vec4 {
+        Vec4::new(self.x, self.y, self.z, w)
     }
 
-    /// Creates a new [`Vec3`] from a float and a [`Vec2`].
+    /// Creates a new [`Vec3`] from a [`Vec2`] and a float.
     #[inline]
-    pub const fn from_yz(x: f32, yz: Vec2) -> Self {
-        Self::new(x, yz.x, yz.y)
+    pub const fn from2(xy: Vec2, z: f32) -> Self {
+        Self::new(xy.x, xy.y, z)
     }
 }

@@ -77,7 +77,6 @@ macro_rules! impl_vector_basics {
             }
 
             /// Computes the vector projection of this vector onto another.
-            #[inline]
             pub fn project(&self, onto: &$name) -> $name {
                 onto * (self.dot(onto) / onto.mag_sq())
             }
@@ -91,7 +90,6 @@ macro_rules! impl_vector_basics {
             }
 
             /// Gets a pointer to the first element of this vector.
-            #[inline]
             pub const fn as_ptr(&self) -> *const $inner {
                 // SAFETY: `repr(C)` guarantees that the first element has the same address as `self`, so we can safely
                 // cast `*const Vec` to `*const f32`.
@@ -99,10 +97,21 @@ macro_rules! impl_vector_basics {
             }
 
             /// Gets a mutable pointer to the first element of this vector.
-            #[inline]
             pub fn as_mut_ptr(&mut self) -> *mut $inner {
                 // SAFETY: see `as_ptr` above.
                 self as *mut $name as *mut $inner
+            }
+
+            /// Gets a reference to this vector as a slice of bytes.
+            pub fn as_bytes(&self) -> &[u8] {
+                bytemuck::bytes_of(self)
+            }
+
+            /// Converts this vector to an array of bytes.
+            pub fn to_bytes(self) -> [u8; ::core::mem::size_of::<$inner>() * $count] {
+                // SAFETY: `self`'s length is always guaranteed to be exactly the same as `$count × sizeof<$inner>`; so
+                // slice->array will never fail.
+                unsafe { self.as_bytes().try_into().unwrap_unchecked() }
             }
         }
 

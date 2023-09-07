@@ -134,6 +134,34 @@ macro_rules! impl_matrix_basics {
                     )*],
                 }
             }
+
+            /// Gets a pointer to the first entry of this matrix.
+            ///
+            /// Recall that matrices are stored in column-major order under the hood.
+            pub const fn as_ptr(&self) -> *const $inner {
+                // SAFETY: `repr(C)` guarantees that the address of `self` is the same as the first element.
+                self as *const $name as *const $inner
+            }
+
+            /// Gets a mutable pointer to the first entry of this matrix.
+            ///
+            /// Recall that matrices are stored in column-major order under the hood.
+            pub fn as_mut_ptr(&mut self) -> *mut $inner {
+                // SAFETY: see `as_ptr`.
+                self as *mut $name as *mut $inner
+            }
+
+            /// Gets a reference to this vector as a slice of bytes.
+            pub fn as_bytes(&self) -> &[u8] {
+                bytemuck::bytes_of(self)
+            }
+
+            /// Converts this vector to an array of bytes.
+            pub fn to_bytes(self) -> [u8; ::core::mem::size_of::<$inner>() * $rows * $cols] {
+                // SAFETY: `self`'s length is always guaranteed to be exactly the same as `$count × sizeof<$inner>`; so
+                // slice->array will never fail.
+                unsafe { self.as_bytes().try_into().unwrap_unchecked() }
+            }
         }
 
         // =============================================================================================================

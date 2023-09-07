@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use super::{Vec2, Vec3};
+use super::Vec3;
 
 
 #[repr(C)]
@@ -22,33 +22,11 @@ impl Vec4 {
 
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`Vec4`] out of a [`Vec3`] and a float.
+    /// Creates a new [`Vec4`] out of a [`Vec3`]'s `x`, `y`, and `z` components and a given `w` component.
+    ///
+    /// See also: [`Vec3::to4`]
     #[inline]
-    pub const fn from_xyz(xyz: Vec3, w: f32) -> Self {
+    pub const fn from3(xyz: Vec3, w: f32) -> Self {
         Self::new(xyz.x, xyz.y, xyz.z, w)
-    }
-
-    /// Creates a new [`Vec4`] out of a float and a [`Vec3`].
-    #[inline]
-    pub const fn from_yzw(x: f32, yzw: Vec3) -> Self {
-        Self::new(x, yzw.x, yzw.y, yzw.z)
-    }
-
-    /// Creates a new [`Vec4`] out of a [`Vec2`] and two floats.
-    #[inline]
-    pub const fn from_xy(xy: Vec2, z: f32, w: f32) -> Self {
-        Self::new(xy.x, xy.y, z, w)
-    }
-
-    /// Creates a new [`Vec4`] out of two floats and a [`Vec2`].
-    #[inline]
-    pub const fn from_zw(x: f32, y: f32, zw: Vec2) -> Self {
-        Self::new(x, y, zw.x, zw.y)
-    }
-
-    /// Creates a new [`Vec4`] out of two [`Vec2`]s.
-    #[inline]
-    pub const fn from_xy_zw(xy: Vec2, zw: Vec2) -> Self {
-        Self::new(xy.x, xy.y, zw.x, zw.y)
     }
 }
