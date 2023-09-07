@@ -7,8 +7,7 @@ edition = "2021"
 
 [dependencies]
 # Local crates
-gloog-core = { path = "crates/gloog-core" }
-gloog-math = { path = "crates/gloog-math" }
+gloog = { version = "0.1.0", path = "crates/gloog" }
 # 3rd party deps
 bytemuck = "1.13.1"
 glfw = "0.52.0"
@@ -16,6 +15,7 @@ glfw = "0.52.0"
 
 [workspace]
 members = [
-    "crates/gloog-core",
-    "crates/gloog-math",
+    "crates/core",
+    "crates/math",
+    "crates/gloog",
 ]

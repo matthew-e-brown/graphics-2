@@ -86,6 +86,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gloog"
+version = "0.1.0"
+dependencies = [
+ "gloog-core",
+ "gloog-math",
+]
+
+[[package]]
 name = "gloog-core"
 version = "0.1.0"
 dependencies = [
@@ -106,8 +114,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glfw",
- "gloog-core",
- "gloog-math",
+ "gloog",
 ]
 
 [[package]]
