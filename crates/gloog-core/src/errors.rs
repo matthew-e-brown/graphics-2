@@ -25,12 +25,12 @@ impl EnumConversionError {
 /// when the given `GLbitfield` value does not
 #[derive(Error, Debug)]
 #[error("could not convert `GLbitfield` value '{original_value:#b}' into struct of type `{attempted_type}`")]
-pub struct BitFieldConversionError {
+pub struct BitfieldConversionError {
     original_value: GLbitfield,
     attempted_type: &'static str,
 }
 
-impl BitFieldConversionError {
+impl BitfieldConversionError {
     pub(crate) const fn new(value: GLbitfield, name: &'static str) -> Self {
         Self {
             original_value: value,

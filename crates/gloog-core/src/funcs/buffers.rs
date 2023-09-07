@@ -3,17 +3,17 @@ use gl::types::*;
 use crate::types::*;
 
 
-pub fn create_buffer() -> Buffer {
+pub fn create_buffer() -> BufferID {
     let mut name = 0;
     unsafe {
         gl::CreateBuffers(1, &mut name);
     }
 
-    Buffer::new(name)
+    BufferID::new(name)
 }
 
 
-pub fn create_buffers(n: usize) -> Vec<Buffer> {
+pub fn create_buffers(n: usize) -> Vec<BufferID> {
     if n == 0 {
         return vec![];
     }
@@ -25,11 +25,11 @@ pub fn create_buffers(n: usize) -> Vec<Buffer> {
         gl::CreateBuffers(n, names.as_mut_ptr());
     }
 
-    names.into_iter().map(Buffer::new).collect()
+    names.into_iter().map(BufferID::new).collect()
 }
 
 
-pub fn bind_buffer(target: BufferTarget, buffer: &Buffer) {
+pub fn bind_buffer(target: BufferTarget, buffer: BufferID) {
     unsafe {
         gl::BindBuffer(target.into(), buffer.name());
     }
@@ -45,7 +45,7 @@ pub fn buffer_data(target: BufferTarget, data: impl AsRef<[u8]>, usage: BufferUs
 }
 
 
-pub fn named_buffer_data(buffer: &Buffer, data: impl AsRef<[u8]>, usage: BufferUsage) {
+pub fn named_buffer_data(buffer: BufferID, data: impl AsRef<[u8]>, usage: BufferUsage) {
     let data = data.as_ref();
     let size: GLsizeiptr = data.len().try_into().expect("buffer data size should fit into `GLsizeiptr`");
     unsafe {

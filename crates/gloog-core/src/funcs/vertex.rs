@@ -3,17 +3,17 @@ use gl::types::*;
 use crate::types::*;
 
 
-pub fn create_vertex_array() -> VertexArray {
+pub fn create_vertex_array() -> VertexArrayID {
     let mut name = 0;
     unsafe {
         gl::CreateVertexArrays(1, &mut name);
     }
 
-    VertexArray::new(name)
+    VertexArrayID::new(name)
 }
 
 
-pub fn create_vertex_arrays(n: usize) -> Vec<VertexArray> {
+pub fn create_vertex_arrays(n: usize) -> Vec<VertexArrayID> {
     if n == 0 {
         return vec![];
     }
@@ -25,11 +25,11 @@ pub fn create_vertex_arrays(n: usize) -> Vec<VertexArray> {
         gl::CreateVertexArrays(n, names.as_mut_ptr());
     }
 
-    names.into_iter().map(VertexArray::new).collect()
+    names.into_iter().map(VertexArrayID::new).collect()
 }
 
 
-pub fn bind_vertex_array(vao: &VertexArray) {
+pub fn bind_vertex_array(vao: VertexArrayID) {
     unsafe {
         gl::BindVertexArray(vao.name());
     }

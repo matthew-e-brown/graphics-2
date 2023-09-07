@@ -8,61 +8,61 @@ pub use self::enums::*;
 pub use self::flags::*;
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Buffer(GLuint);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BufferID(GLuint);
 
-impl Buffer {
-    pub(crate) const fn new(name: GLuint) -> Self {
+impl BufferID {
+    pub(crate) fn new(name: GLuint) -> Self {
         Self(name)
     }
 
-    pub(crate) const fn name(&self) -> GLuint {
+    pub(crate) fn name(&self) -> GLuint {
         self.0
     }
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Shader(GLuint, ShaderType);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ShaderID(GLuint, ShaderType);
 
-impl Shader {
-    pub(crate) const fn new(name: GLuint, shader_type: ShaderType) -> Self {
+impl ShaderID {
+    pub(crate) fn new(name: GLuint, shader_type: ShaderType) -> Self {
         Self(name, shader_type)
     }
 
-    pub(crate) const fn name(&self) -> GLuint {
+    pub(crate) fn name(&self) -> GLuint {
         self.0
     }
 
-    pub const fn shader_type(&self) -> ShaderType {
+    pub fn shader_type(&self) -> ShaderType {
         self.1
     }
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Program(GLuint);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ProgramID(GLuint);
 
-impl Program {
-    pub(crate) const fn new(name: GLuint) -> Self {
+impl ProgramID {
+    pub(crate) fn new(name: GLuint) -> Self {
         Self(name)
     }
 
-    pub(crate) const fn name(&self) -> GLuint {
+    pub(crate) fn name(&self) -> GLuint {
         self.0
     }
 }
 
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct VertexArray(GLuint);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VertexArrayID(GLuint);
 
-impl VertexArray {
-    pub(crate) const fn new(name: GLuint) -> Self {
+impl VertexArrayID {
+    pub(crate) fn new(name: GLuint) -> Self {
         Self(name)
     }
 
-    pub(crate) const fn name(&self) -> GLuint {
+    pub(crate) fn name(&self) -> GLuint {
         self.0
     }
 }

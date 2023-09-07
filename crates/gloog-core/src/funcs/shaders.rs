@@ -4,17 +4,17 @@ use crate::errors::*;
 use crate::types::*;
 
 
-pub fn create_shader(shader_type: ShaderType) -> Result<Shader, ObjectCreationError> {
+pub fn create_shader(shader_type: ShaderType) -> Result<ShaderID, ObjectCreationError> {
     let name = unsafe { gl::CreateShader(shader_type.into()) };
     if name == 0 {
         Err(ObjectCreationError::new("a shader"))
     } else {
-        Ok(Shader::new(name, shader_type))
+        Ok(ShaderID::new(name, shader_type))
     }
 }
 
 
-pub fn shader_source<S: AsRef<str>>(shader: &Shader, strings: impl IntoIterator<Item = S>) {
+pub fn shader_source<S: AsRef<str>>(shader: ShaderID, strings: impl IntoIterator<Item = S>) {
     let strings = strings.into_iter();
     let hint = strings.size_hint();
     let hint = hint.1.unwrap_or(hint.0).max(1);
@@ -46,7 +46,7 @@ pub fn shader_source<S: AsRef<str>>(shader: &Shader, strings: impl IntoIterator<
 }
 
 
-pub fn compile_shader(shader: &Shader) -> Result<(), String> {
+pub fn compile_shader(shader: ShaderID) -> Result<(), String> {
     let success = unsafe {
         let mut status = 0;
         gl::CompileShader(shader.name());
@@ -63,7 +63,7 @@ pub fn compile_shader(shader: &Shader) -> Result<(), String> {
 }
 
 
-pub fn get_shader_info_log(shader: &Shader) -> Option<String> {
+pub fn get_shader_info_log(shader: ShaderID) -> Option<String> {
     let mut log_size = 0;
     unsafe {
         gl::GetShaderiv(shader.name(), gl::INFO_LOG_LENGTH, &mut log_size);
@@ -85,31 +85,31 @@ pub fn get_shader_info_log(shader: &Shader) -> Option<String> {
 }
 
 
-pub fn create_program() -> Result<Program, ObjectCreationError> {
+pub fn create_program() -> Result<ProgramID, ObjectCreationError> {
     let name = unsafe { gl::CreateProgram() };
     if name == 0 {
         Err(ObjectCreationError::new("a program"))
     } else {
-        Ok(Program::new(name))
+        Ok(ProgramID::new(name))
     }
 }
 
 
-pub fn attach_shader(program: &Program, shader: &Shader) {
+pub fn attach_shader(program: ProgramID, shader: ShaderID) {
     unsafe {
         gl::AttachShader(program.name(), shader.name());
     }
 }
 
 
-pub fn detach_shader(program: &Program, shader: &Shader) {
+pub fn detach_shader(program: ProgramID, shader: ShaderID) {
     unsafe {
         gl::DetachShader(program.name(), shader.name());
     }
 }
 
 
-pub fn link_program(program: &Program) -> Result<(), String> {
+pub fn link_program(program: ProgramID) -> Result<(), String> {
     let success = unsafe {
         let mut status = 0;
         gl::LinkProgram(program.name());
@@ -126,7 +126,7 @@ pub fn link_program(program: &Program) -> Result<(), String> {
 }
 
 
-pub fn get_program_info_log(program: &Program) -> Option<String> {
+pub fn get_program_info_log(program: ProgramID) -> Option<String> {
     let mut log_size = 0;
     unsafe {
         gl::GetProgramiv(program.name(), gl::INFO_LOG_LENGTH, &mut log_size);
@@ -148,7 +148,7 @@ pub fn get_program_info_log(program: &Program) -> Option<String> {
 }
 
 
-pub fn use_program(program: &Program) {
+pub fn use_program(program: ProgramID) {
     unsafe {
         gl::UseProgram(program.name());
     }

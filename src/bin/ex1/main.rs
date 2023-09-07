@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
 use gloog_core as gl;
-use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, Program, ShaderType, VertexAttribType};
+use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
 use gloog_math::vector::Vec3;
 
 
@@ -51,14 +51,14 @@ pub fn main() {
     // -----------------------------------------------------------------
 
     let program = compile_and_link_program().unwrap();
-    gl::use_program(&program);
+    gl::use_program(program);
 
     let vbo = gl::create_buffer();
-    gl::bind_buffer(BufferTarget::ArrayBuffer, &vbo);
+    gl::bind_buffer(BufferTarget::ArrayBuffer, vbo);
     gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&VERTICES), BufferUsage::StaticDraw);
 
     let vao = gl::create_vertex_array();
-    gl::bind_vertex_array(&vao);
+    gl::bind_vertex_array(vao);
 
     let vec_size = size_of::<Vec3>();
     let stride = vec_size as isize * 2;
@@ -74,7 +74,7 @@ pub fn main() {
     while !window.should_close() {
         gl::clear_color(0.17, 0.17, 0.17, 1.0);
         gl::clear(ClearMask::COLOR);
-        gl::bind_vertex_array(&vao);
+        gl::bind_vertex_array(vao);
         gl::draw_arrays(DrawMode::Triangles, 0, VERTICES.len());
 
         window.swap_buffers();
@@ -93,25 +93,25 @@ pub fn main() {
 }
 
 
-fn compile_and_link_program() -> Result<Program, String> {
+fn compile_and_link_program() -> Result<ProgramID, String> {
     let vert_shader = gl::create_shader(ShaderType::Vertex).map_err(|e| e.to_string())?;
     let frag_shader = gl::create_shader(ShaderType::Fragment).map_err(|e| e.to_string())?;
 
     // Just include the entire source-code of the shaders in the binary, for now
-    gl::shader_source(&vert_shader, &[include_str!("./shader-vert.glsl")]);
-    gl::shader_source(&frag_shader, &[include_str!("./shader-frag.glsl")]);
+    gl::shader_source(vert_shader, &[include_str!("./shader-vert.glsl")]);
+    gl::shader_source(frag_shader, &[include_str!("./shader-frag.glsl")]);
 
-    gl::compile_shader(&vert_shader)?;
-    gl::compile_shader(&frag_shader)?;
+    gl::compile_shader(vert_shader)?;
+    gl::compile_shader(frag_shader)?;
 
     let program = gl::create_program().map_err(|e| e.to_string())?;
-    gl::attach_shader(&program, &vert_shader);
-    gl::attach_shader(&program, &frag_shader);
+    gl::attach_shader(program, vert_shader);
+    gl::attach_shader(program, frag_shader);
 
-    gl::link_program(&program)?;
+    gl::link_program(program)?;
 
-    gl::detach_shader(&program, &vert_shader);
-    gl::detach_shader(&program, &frag_shader);
+    gl::detach_shader(program, vert_shader);
+    gl::detach_shader(program, frag_shader);
 
     Ok(program)
 }

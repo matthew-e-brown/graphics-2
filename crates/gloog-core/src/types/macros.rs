@@ -60,7 +60,7 @@ macro_rules! gl_enum {
             ),*
         }
 
-        impl ::core::convert::From<$enum_name> for ::gl::types::GLenum {
+        impl core::convert::From<$enum_name> for gl::types::GLenum {
             fn from(value: $enum_name) -> Self {
                 match value {
                     $( $enum_name::$field_name => gl::$gl_name ),*
@@ -68,10 +68,10 @@ macro_rules! gl_enum {
             }
         }
 
-        impl ::core::convert::TryFrom<::gl::types::GLenum> for $enum_name {
+        impl core::convert::TryFrom<gl::types::GLenum> for $enum_name {
             type Error = crate::errors::EnumConversionError;
 
-            fn try_from(value: ::gl::types::GLenum) -> Result<Self, Self::Error> {
+            fn try_from(value: gl::types::GLenum) -> Result<Self, Self::Error> {
                 match value {
                     $( gl::$gl_name => Ok(Self::$field_name), )*
                     other => Err(Self::Error::new(other, stringify!($enum_name))),
@@ -79,8 +79,8 @@ macro_rules! gl_enum {
             }
         }
 
-        impl ::core::fmt::Debug for $enum_name {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        impl core::fmt::Debug for $enum_name {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 f.write_str(match self {
                     $ ($enum_name::$field_name => stringify!($field_name), )*
                 })
@@ -94,7 +94,7 @@ macro_rules! gl_enum {
 ///
 /// Structs are automatically declared with:
 ///
-/// - All bitwise operations, including a bitwise implementation of [`Not`][::core::ops::Not].
+/// - All bitwise operations, including a bitwise implementation of [`Not`][core::ops::Not].
 /// - Derives with [`Clone`][macro@Clone], [`Copy`][macro@Copy], [`PartialEq`][macro@PartialEq], [`Eq`][macro@Eq], and
 ///   [`Hash`].
 /// - A [`Debug`][core::fmt::Debug] implementation.
@@ -130,7 +130,7 @@ macro_rules! gl_bitfield {
         $(#[$struct_attrs])*
         #[repr(transparent)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-        $vis struct $struct_name(::gl::types::GLbitfield);
+        $vis struct $struct_name(gl::types::GLbitfield);
 
         impl $struct_name {
             $(
@@ -156,18 +156,18 @@ macro_rules! gl_bitfield {
         }
 
 
-        impl ::core::convert::From<$struct_name> for ::gl::types::GLbitfield {
+        impl core::convert::From<$struct_name> for gl::types::GLbitfield {
             fn from(value: $struct_name) -> Self {
                 value.0
             }
         }
 
-        impl ::core::convert::TryFrom<::gl::types::GLbitfield> for $struct_name {
-            type Error = crate::errors::BitFieldConversionError;
+        impl core::convert::TryFrom<gl::types::GLbitfield> for $struct_name {
+            type Error = crate::errors::BitfieldConversionError;
 
-            fn try_from(value: ::gl::types::GLbitfield) -> Result<Self, Self::Error> {
+            fn try_from(value: gl::types::GLbitfield) -> Result<Self, Self::Error> {
                 // Mask `value` to only contain the bits from this bitfield
-                let truncated = value & <$struct_name as Into<::gl::types::GLbitfield>>::into(Self::all());
+                let truncated = value & <$struct_name as Into<gl::types::GLbitfield>>::into(Self::all());
                 // If nothing was lost, the passed value was a valid bitfield for this type
                 if truncated == value {
                     Ok(Self(value))
@@ -178,8 +178,8 @@ macro_rules! gl_bitfield {
         }
 
 
-        impl ::core::fmt::Debug for $struct_name {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        impl core::fmt::Debug for $struct_name {
+            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 // Take a list of all the possible flags as strings, check if self has each of them, then join together
                 // separated by `|`.
                 let fields = [ $( (Self::$const_name, stringify!($const_name)), )* ]
@@ -201,7 +201,7 @@ macro_rules! gl_bitfield {
         }
 
 
-        impl ::core::ops::Not for $struct_name {
+        impl core::ops::Not for $struct_name {
             type Output = $struct_name;
 
             fn not(self) -> Self::Output {
@@ -210,7 +210,7 @@ macro_rules! gl_bitfield {
             }
         }
 
-        impl<'a> ::core::ops::Not for &'a $struct_name {
+        impl<'a> core::ops::Not for &'a $struct_name {
             type Output = $struct_name;
 
             fn not(self) -> Self::Output {
@@ -218,7 +218,7 @@ macro_rules! gl_bitfield {
             }
         }
 
-        impl<'a> ::core::ops::Not for &'a mut $struct_name {
+        impl<'a> core::ops::Not for &'a mut $struct_name {
             type Output = $struct_name;
 
             fn not(self) -> Self::Output {
@@ -238,60 +238,60 @@ macro_rules! gl_bitfield {
     // -----------------------------------------------------------------------------------------------------------------
     (impl $op_trait:ident for $struct_name:ident, $op_func:ident) => {
         // owned ⇄ owned
-        impl ::core::ops::$op_trait<$struct_name> for $struct_name {
+        impl core::ops::$op_trait<$struct_name> for $struct_name {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: $struct_name) -> Self::Output {
-                $struct_name(<::gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
             }
         }
 
         // ref ⇄ ref
-        impl<'lhs, 'rhs> ::core::ops::$op_trait<&'rhs $struct_name> for &'lhs $struct_name {
+        impl<'lhs, 'rhs> core::ops::$op_trait<&'rhs $struct_name> for &'lhs $struct_name {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: &'rhs $struct_name) -> Self::Output {
-                $struct_name(<::gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
             }
         }
 
         // ref ⇄ owned
-        impl<'lhs> ::core::ops::$op_trait<$struct_name> for &'lhs $struct_name {
+        impl<'lhs> core::ops::$op_trait<$struct_name> for &'lhs $struct_name {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: $struct_name) -> Self::Output {
-                $struct_name(<::gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
             }
         }
 
         // owned ⇄ ref
-        impl<'rhs> ::core::ops::$op_trait<&'rhs $struct_name> for $struct_name {
+        impl<'rhs> core::ops::$op_trait<&'rhs $struct_name> for $struct_name {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: &'rhs $struct_name) -> Self::Output {
-                $struct_name(<::gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
             }
         }
     };
     (impl $op_trait:ident (assign) for $struct_name:ident, $op_func:ident) => {
         // with owned
-        impl ::core::ops::$op_trait<$struct_name> for $struct_name {
+        impl core::ops::$op_trait<$struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: $struct_name) {
-                <::gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
             }
         }
 
         // with ref
-        impl<'rhs> ::core::ops::$op_trait<&'rhs $struct_name> for $struct_name {
+        impl<'rhs> core::ops::$op_trait<&'rhs $struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: &'rhs $struct_name) {
-                <::gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
             }
         }
 
         // with mut
-        impl<'rhs> ::core::ops::$op_trait<&'rhs mut $struct_name> for $struct_name {
+        impl<'rhs> core::ops::$op_trait<&'rhs mut $struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: &'rhs mut $struct_name) {
-                <::gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
             }
         }
     };
