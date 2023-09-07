@@ -11,7 +11,7 @@ pub use mat4::*;
 ///
 /// This macro has some whack-ass syntax because it needs a whole bunch of specific identifiers, literals, etc., all
 /// provided in a specific order with specific nesting to enable proper declarative macro repetition behaviours (e.g.,
-/// `row_major_new` needs to receive the same identifiers as `new`, but they need to be repeated in a different order).
+/// `new_rm` needs to receive the same identifiers as `new`, but they need to be repeated in a different order).
 ///
 /// Note to self: matrices using this **must** be `repr(C)`!
 macro_rules! impl_matrix_basics {
@@ -80,10 +80,8 @@ macro_rules! impl_matrix_basics {
 
         impl $name {
             /// Creates a new matrix using column-major order.
-            ///
-            /// Reminder: `n32` is row 3, column 2.
             #[inline]
-            pub const fn new(
+            pub const fn new_cm(
                 $($( $param_n: $inner, )*)*
             ) -> Self {
                 Self {
@@ -95,7 +93,7 @@ macro_rules! impl_matrix_basics {
 
             /// Creates a new matrix using row-major order.
             #[inline]
-            pub const fn row_major_new(
+            pub const fn new_rm(
                 $($( $rm_param_src: $inner, )*)*
             ) -> Self {
                 Self {
@@ -364,40 +362,50 @@ macro_rules! impl_matrix_basics {
         // Indexing
         // ----------------------------------------------------------------------------------------
 
-        impl<I> ::core::ops::Index<I> for $name
-        where
-            [$col_type; $cols]: ::core::ops::Index<I>,
-        {
-            type Output = <[$col_type; $cols] as ::core::ops::Index<I>>::Output;
+        // Really what we want to do is to implement an indexer for everything that can index a slice. The nicest way to
+        // do that would be blanket implementation over `I: SliceIndex<[Vec4]>`. However, if we do that, we can no
+        // longer provide custom indexers for other types, like `[usize; 2]` or `(usize, usize)` (since, technically,
+        // the Rust team could add implementations for `[usize; 2]: SliceIndex<[Vec4]>`, which would break our code).
+        //
+        // So, instead, we have to manually implement all the things that that blanket implementation would do. A list
+        // of the types that implement the `SliceIndex` trait should start around here in the Rust docs:
+        // https://doc.rust-lang.org/std/primitive.slice.html#impl-SliceIndex%3C%5BT%5D%3E-for-(Bound%3Cusize%3E,+Bound%3Cusize%3E)
 
-            fn index(&self, index: I) -> &Self::Output {
-                self.as_columns().index(index)
+        // These indexers return columns or ranges of columns:
+
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, usize);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::Range<usize>);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::RangeFrom<usize>);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::RangeFull);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::RangeInclusive<usize>);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::RangeTo<usize>);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, ::core::ops::RangeToInclusive<usize>);
+        $crate::matrix::impl_matrix_basics!(@index $name, $col_type, (::core::ops::Bound<usize>, ::core::ops::Bound<usize>));
+
+        // These indexers use a 2-length array (`matrix[[4, 2]]`) to return an entry directly. Because `matrix[4][2]`
+        // gets a column vector with the `4` and then indexes that with the `2`, that notation is column-major.
+        // `matrix[[4, 2]]` uses row-major ordering.
+
+        impl ::core::ops::Index<[usize; 2]> for $name {
+            type Output = $inner;
+
+            fn index(&self, index: [usize; 2]) -> &Self::Output {
+                let row = index[0];
+                let col = index[1];
+                self.index(col).index(row)
             }
         }
 
-        impl<I> ::core::ops::IndexMut<I> for $name
-        where
-            [$col_type; $cols]: ::core::ops::IndexMut<I>,
-        {
-            fn index_mut(&mut self, index: I) -> &mut Self::Output {
-                self.as_mut_columns().index_mut(index)
-            }
-        }
-
-        impl $name {
-            /// Indexes this matrix using row-major notation/ordering instead of column-major.
-            #[inline]
-            pub fn get(&self, row: usize, col: usize) -> $inner {
-                self[col][row]
-            }
-
-            /// Indexes this matrix (using row-major notation/ordering) and returns a mutable reference.
-            #[inline]
-            pub fn get_mut(&mut self, row: usize, col: usize) -> &mut $inner {
-                use ::core::ops::IndexMut;
+        impl ::core::ops::IndexMut<[usize; 2]> for $name {
+            fn index_mut(&mut self, index: [usize; 2]) -> &mut Self::Output {
+                let row = index[0];
+                let col = index[1];
                 self.index_mut(col).index_mut(row)
             }
+        }
 
+
+        impl $name {
             /// Returns an iterator of reverences over all the entries in this matrix.
             pub fn entries(&self) -> impl Iterator<Item = &$inner> {
                 self.as_2d_array().iter().flat_map(|arr| arr.iter())
@@ -406,6 +414,21 @@ macro_rules! impl_matrix_basics {
             /// Returns an iterator of mutable references over all the entries in this matrix.
             pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut $inner> {
                 self.as_mut_2d_array().iter_mut().flat_map(|arr| arr.iter_mut())
+            }
+        }
+    };
+    (@index $name:ident, $col_type:ty, $idx:ty) => {
+        impl ::core::ops::Index<$idx> for $name {
+            type Output = <$idx as core::slice::SliceIndex<[$col_type]>>::Output;
+
+            fn index(&self, index: $idx) -> &Self::Output {
+                self.as_columns().index(index)
+            }
+        }
+
+        impl ::core::ops::IndexMut<$idx> for $name {
+            fn index_mut(&mut self, index: $idx) -> &mut Self::Output {
+                self.as_mut_columns().index_mut(index)
             }
         }
     };

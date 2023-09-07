@@ -27,7 +27,7 @@ super::impl_matrix_basics!(Mat3, f32, 3 * 3, {
 
 #[rustfmt::skip]
 crate::operator!(* |a: Mat3, b: Mat3| -> Mat3 {
-    Mat3::new(
+    Mat3::new_cm(
         a[0][0] * b[0][0]   +   a[1][0] * b[0][1]   +   a[2][0] * b[0][2], // row 1, col 1
         a[0][1] * b[0][0]   +   a[1][1] * b[0][1]   +   a[2][1] * b[0][2], // row 2, col 1
         a[0][2] * b[0][0]   +   a[1][2] * b[0][1]   +   a[2][2] * b[0][2], // row 3, col 1
@@ -54,7 +54,7 @@ crate::operator!(* |a: Mat3, b: Vec3| -> Vec3 {
 impl Mat3 {
     /// The 3×3 identity matrix.
     #[rustfmt::skip]
-    pub const IDENTITY: Mat3 = Mat3::new(
+    pub const IDENTITY: Mat3 = Mat3::new_cm(
         1.0, 0.0, 0.0,
         0.0, 1.0, 0.0,
         0.0, 0.0, 1.0,
@@ -63,10 +63,10 @@ impl Mat3 {
     /// Computes a new matrix which is this matrix's transpose.
     #[rustfmt::skip]
     pub fn transpose(&self) -> Mat3 {
-        Mat3::new(
-            self[0][0], self[1][0], self[2][0],
-            self[0][1], self[1][1], self[2][1],
-            self[0][2], self[1][2], self[2][2],
+        Mat3::new_rm(
+            self[[0, 0]], self[[1, 0]], self[[2, 0]],
+            self[[0, 1]], self[[1, 1]], self[[2, 1]],
+            self[[0, 2]], self[[1, 2]], self[[2, 2]],
         )
     }
 }

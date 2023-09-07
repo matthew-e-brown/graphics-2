@@ -25,7 +25,7 @@ super::impl_matrix_basics!(Mat2, f32, 2 * 2, {
 
 #[rustfmt::skip]
 crate::operator!(* |a: Mat2, b: Mat2| -> Mat2 {
-    Mat2::new(
+    Mat2::new_cm(
         a[0][0] * b[0][0]   +   a[1][0] * b[0][1], // row 1, col 1
         a[0][1] * b[0][0]   +   a[1][1] * b[0][1], // row 2, col 1
         // ---------------------------------------
@@ -45,7 +45,7 @@ crate::operator!(* |a: Mat2, b: Vec2| -> Vec2 {
 impl Mat2 {
     /// The 2×2 identity matrix.
     #[rustfmt::skip]
-    pub const IDENTITY: Mat2 = Mat2::new(
+    pub const IDENTITY: Mat2 = Mat2::new_cm(
         1.0, 0.0,
         0.0, 1.0,
     );
@@ -53,9 +53,9 @@ impl Mat2 {
     /// Computes a new matrix which is this matrix's transpose.
     #[rustfmt::skip]
     pub fn transpose(&self) -> Mat2 {
-        Mat2::new(
-            self[0][0], self[1][0],
-            self[0][1], self[1][1],
+        Mat2::new_rm(
+            self[[0, 0]], self[[1, 0]],
+            self[[0, 1]], self[[1, 1]],
         )
     }
 }

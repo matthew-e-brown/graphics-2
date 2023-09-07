@@ -218,6 +218,9 @@ macro_rules! impl_vector_basics {
 
         // Indexing is implemented for any type that an array of `T` (`f32`) can be indexed with; this automatically
         // gives support for `&vec4[1..2]` to get a `&[f32]`.
+        //
+        // Because vectors aren't 2D or anything, we don't have to worry about conflicting blanket implementations like
+        // we do for matrices.
 
         impl<I> ::core::ops::Index<I> for $name
         where

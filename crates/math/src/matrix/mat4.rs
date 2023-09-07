@@ -29,7 +29,7 @@ super::impl_matrix_basics!(Mat4, f32, 4 * 4, {
 
 #[rustfmt::skip]
 crate::operator!(* |a: Mat4, b: Mat4| -> Mat4 {
-    Mat4::new(
+    Mat4::new_cm(
         a[0][0] * b[0][0]   +   a[1][0] * b[0][1]   +   a[2][0] * b[0][2]   +   a[3][0] * b[0][3], // row 1, col 1
         a[0][0] * b[1][0]   +   a[1][0] * b[1][1]   +   a[2][0] * b[1][2]   +   a[3][0] * b[1][3], // row 2, col 1
         a[0][0] * b[2][0]   +   a[1][0] * b[2][1]   +   a[2][0] * b[2][2]   +   a[3][0] * b[2][3], // row 3, col 1
@@ -65,7 +65,7 @@ crate::operator!(* |a: Mat4, b: Vec4| -> Vec4 {
 impl Mat4 {
     /// The 4×4 identity matrix.
     #[rustfmt::skip]
-    pub const IDENTITY: Mat4 = Mat4::new(
+    pub const IDENTITY: Mat4 = Mat4::new_cm(
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
@@ -75,11 +75,11 @@ impl Mat4 {
     /// Computes a new matrix which is this matrix's transpose.
     #[rustfmt::skip]
     pub fn transpose(&self) -> Mat4 {
-        Mat4::new(
-            self[0][0], self[1][0], self[2][0], self[3][0],
-            self[0][1], self[1][1], self[2][1], self[3][1],
-            self[0][2], self[1][2], self[2][2], self[3][2],
-            self[0][3], self[1][3], self[2][3], self[3][3],
+        Mat4::new_rm(
+            self[[0, 0]], self[[1, 0]], self[[2, 0]], self[[3, 0]],
+            self[[0, 1]], self[[1, 1]], self[[2, 1]], self[[3, 1]],
+            self[[0, 2]], self[[1, 2]], self[[2, 2]], self[[3, 2]],
+            self[[0, 3]], self[[1, 3]], self[[2, 3]], self[[3, 3]],
         )
     }
 }
