@@ -74,4 +74,33 @@ impl Matrix3D {
             self[[0, 2]], self[[1, 2]], self[[2, 2]],
         )
     }
+
+    /// Computes the determinant of this matrix.
+    pub fn det(&self) -> f32 {
+        // See equation 1.94 and 1.95 (p. 47/48) [Foundations of Game Development, Vol. 1]
+        Vector3D::scalar_triple(&self[0], &self[1], &self[2])
+    }
+
+    /// Computes this matrix's inverse.
+    ///
+    /// In the interest of performance, there is no check for whether or not this matrix is invertible (if its
+    /// determinant of zero).
+    #[rustfmt::skip]
+    pub fn inverse(&self) -> Matrix3D {
+        let a = &self[0];
+        let b = &self[1];
+        let c = &self[2];
+
+        let r0 = b.cross(c);
+        let r1 = c.cross(a);
+        let r2 = a.cross(b);
+
+        let inv_det = 1.0 / r2.dot(c);
+
+        Matrix3D::new(
+            r0.x * inv_det, r0.y * inv_det, r0.z * inv_det,
+            r1.x * inv_det, r1.y * inv_det, r1.z * inv_det,
+            r2.x * inv_det, r2.y * inv_det, r2.z * inv_det,
+        )
+    }
 }

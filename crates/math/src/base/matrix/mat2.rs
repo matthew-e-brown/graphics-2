@@ -57,11 +57,33 @@ impl Matrix2D {
     );
 
     /// Computes a new matrix which is this matrix's transpose.
+    #[inline]
     #[rustfmt::skip]
     pub fn transpose(&self) -> Matrix2D {
         Matrix2D::new(
             self[[0, 0]], self[[1, 0]],
             self[[0, 1]], self[[1, 1]],
+        )
+    }
+
+    /// Computes the determinant of this matrix.
+    #[inline]
+    pub fn det(&self) -> f32 {
+        self[[0, 0]] * self[[1, 1]] - self[[0, 1]] * self[[1, 0]]
+    }
+
+    /// Computes this matrix's inverse.
+    ///
+    /// In the interest of performance, there is no check for whether or not this matrix is invertible (if its
+    /// determinant of zero).
+    #[rustfmt::skip]
+    pub fn inverse(&self) -> Matrix2D {
+        let inv_det = 1.0 / self.det();
+        let inv_neg = -inv_det;
+
+        Matrix2D::new(
+            inv_det * self[[1, 1]], inv_neg * self[[0, 1]],
+            inv_neg * self[[1, 0]], inv_det * self[[0, 0]],
         )
     }
 }

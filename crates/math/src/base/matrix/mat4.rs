@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use crate::Vector4D;
+use crate::{Vector3D, Vector4D};
 
 
 /// A 4×4 matrix of 32-bit floats.
@@ -87,5 +87,71 @@ impl Matrix4D {
             self[[0, 2]], self[[1, 2]], self[[2, 2]], self[[3, 2]],
             self[[0, 3]], self[[1, 3]], self[[2, 3]], self[[3, 3]],
         )
+    }
+
+    /// Function for accessing the columns of this 4D matrix as 3D vectors, getting the bottom row directly, and
+    /// calculating the intermediate vectors `s`, `t`, `u`, and `v`.
+    ///
+    /// These values are all used for computing both the matrix determinant and inverse. Because both functions use the
+    /// same first few calculations, they are written once and (hopefully) inlined into both methods. [`det`] probably
+    /// won't see a whole lot of use, but the other matrices have `det` functions, so we may as well provide a `det`
+    /// function here as well.
+    ///
+    /// See p.47-50 in Foundations of Game Dev, vol.1 for information on what this is all about.
+    #[inline(always)]
+    fn inv_det_helper(&self) -> ([&Vector3D; 4], [&f32; 4], [Vector3D; 4]) {
+        // SAFETY: this is the same sort of cast + re-borrow we do for `as_array` or `as_columns`. The only reason we
+        // don't use `as_columns` or simply index this matrix is because we want our vec4 columns treated as vec3.
+        let a: &Vector3D = unsafe { &*self[0].as_ptr().cast() };
+        let b: &Vector3D = unsafe { &*self[1].as_ptr().cast() };
+        let c: &Vector3D = unsafe { &*self[2].as_ptr().cast() };
+        let d: &Vector3D = unsafe { &*self[3].as_ptr().cast() };
+
+        let x = &self[[3, 0]];
+        let y = &self[[3, 1]];
+        let z = &self[[3, 2]];
+        let w = &self[[3, 3]];
+
+        let s = a.cross(b);
+        let t = c.cross(b);
+        let u = (y * a) - (x * b);
+        let v = (w * c) - (z * d);
+
+        ([a, b, c, d], [x, y, z, w], [s, t, u, v])
+    }
+
+    /// Computes the determinant of this matrix.
+    pub fn det(&self) -> f32 {
+        let (_, _, [s, t, u, v]) = self.inv_det_helper();
+        s.dot(&v) + t.dot(&u)
+    }
+
+    /// Computes this matrix's inverse.
+    ///
+    /// In the interest of performance, there is no check for whether or not this matrix is invertible (if its
+    /// determinant of zero).
+    pub fn inverse(&self) -> Matrix4D {
+        let ([a, b, c, d], [x, y, z, w], [mut s, mut t, mut u, mut v]) = self.inv_det_helper();
+
+        let inv_det = 1.0 / (s.dot(&v) + t.dot(&u));
+        s *= inv_det;
+        t *= inv_det;
+        u *= inv_det;
+        v *= inv_det;
+
+        let r0 = b.cross(&v) + t * y;
+        let r1 = v.cross(&a) - t * x;
+        let r2 = d.cross(&u) + s * w;
+        let r3 = u.cross(&c) - s * z;
+
+        #[rustfmt::skip]
+        return Matrix4D::new(
+            r0.x, r0.y, r0.z, -b.dot(&t),
+            r1.x, r1.y, r1.z,  a.dot(&t),
+            r2.x, r2.y, r2.z, -d.dot(&s),
+            r3.x, r3.y, r3.z,  c.dot(&s),
+        );
+
+        // explicit return: https://github.com/rust-lang/rust/issues/15701
     }
 }
