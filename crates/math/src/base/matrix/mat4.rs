@@ -1,17 +1,21 @@
 use bytemuck::{Pod, Zeroable};
 
-use crate::vector::Vec4;
+use crate::Vector4D;
 
 
+/// A 4×4 matrix of 32-bit floats.
+///
+/// This struct is `repr(C)`, so it is guaranteed to be identical to `[[f32; 4]; 4]` or `[f32; 16]`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct Mat4 {
+pub struct Matrix4D {
     m: [[f32; 4]; 4],
 }
 
+
 #[rustfmt::skip]
-super::impl_matrix_basics!(Mat4, f32, 4 * 4, {
-    col_type: Vec4,
+super::impl_matrix_basics!(Matrix4D, f32, 4 * 4 (64 bytes), {
+    col_type: Vector4D,
     col_order: [
         c0/C0/0: [n00: (0, 0), n10: (0, 1), n20: (0, 2), n30: (0, 3)] / [r0, r1, r2, r3],
         c1/C1/1: [n01: (1, 0), n11: (1, 1), n21: (1, 2), n31: (1, 3)] / [r0, r1, r2, r3],
@@ -27,9 +31,10 @@ super::impl_matrix_basics!(Mat4, f32, 4 * 4, {
     ],
 });
 
+
 #[rustfmt::skip]
-crate::operator!(* |a: Mat4, b: Mat4| -> Mat4 {
-    Mat4::new_cm(
+crate::operator!(* |a: &Matrix4D, b: &Matrix4D| -> Matrix4D {
+    Matrix4D::new_cm(
         a[0][0] * b[0][0]   +   a[1][0] * b[0][1]   +   a[2][0] * b[0][2]   +   a[3][0] * b[0][3], // row 1, col 1
         a[0][0] * b[1][0]   +   a[1][0] * b[1][1]   +   a[2][0] * b[1][2]   +   a[3][0] * b[1][3], // row 2, col 1
         a[0][0] * b[2][0]   +   a[1][0] * b[2][1]   +   a[2][0] * b[2][2]   +   a[3][0] * b[2][3], // row 3, col 1
@@ -53,8 +58,8 @@ crate::operator!(* |a: Mat4, b: Mat4| -> Mat4 {
 });
 
 #[rustfmt::skip]
-crate::operator!(* |a: Mat4, b: Vec4| -> Vec4 {
-    Vec4::new(
+crate::operator!(* |a: &Matrix4D, b: &Vector4D| -> Vector4D {
+    Vector4D::new(
         a[0][0] * b.x   +   a[1][0] * b.y   +   a[2][0] * b.z   +   a[3][0] * b.w,
         a[0][1] * b.x   +   a[1][1] * b.y   +   a[2][1] * b.z   +   a[3][1] * b.w,
         a[0][2] * b.x   +   a[1][2] * b.y   +   a[2][2] * b.z   +   a[3][2] * b.w,
@@ -62,10 +67,11 @@ crate::operator!(* |a: Mat4, b: Vec4| -> Vec4 {
     )
 });
 
-impl Mat4 {
+
+impl Matrix4D {
     /// The 4×4 identity matrix.
     #[rustfmt::skip]
-    pub const IDENTITY: Mat4 = Mat4::new_cm(
+    pub const IDENTITY: Matrix4D = Matrix4D::new(
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
         0.0, 0.0, 1.0, 0.0,
@@ -74,8 +80,8 @@ impl Mat4 {
 
     /// Computes a new matrix which is this matrix's transpose.
     #[rustfmt::skip]
-    pub fn transpose(&self) -> Mat4 {
-        Mat4::new_rm(
+    pub fn transpose(&self) -> Matrix4D {
+        Matrix4D::new(
             self[[0, 0]], self[[1, 0]], self[[2, 0]], self[[3, 0]],
             self[[0, 1]], self[[1, 1]], self[[2, 1]], self[[3, 1]],
             self[[0, 2]], self[[1, 2]], self[[2, 2]], self[[3, 2]],
