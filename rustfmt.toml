@@ -3,13 +3,13 @@
 max_width = 120
 blank_lines_upper_bound = 2
 
-fn_call_width = 80
+fn_call_width = 100
 chain_width = 80
 inline_attribute_width = 40
 overflow_delimited_expr = true
 struct_lit_single_line = true
 struct_lit_width = 32
-single_line_if_else_max_width = 80
+single_line_if_else_max_width = 100
 use_field_init_shorthand = true
 
 reorder_impl_items = false

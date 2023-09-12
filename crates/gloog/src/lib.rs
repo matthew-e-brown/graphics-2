@@ -5,5 +5,4 @@
 //!
 //! See those crates' documentation for details.
 
-pub use gloog_core as core;
-pub use gloog_math as math;
+pub use {gloog_core as core, gloog_math as math};
