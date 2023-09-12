@@ -1,6 +1,7 @@
 mod mat2;
 mod mat3;
 mod mat4;
+#[cfg(test)] mod tests;
 
 pub use mat2::*;
 pub use mat3::*;
