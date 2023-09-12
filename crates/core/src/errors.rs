@@ -1,59 +1,36 @@
-use gl::types::*;
+use std::fmt;
+
 use thiserror::Error;
 
-
-/// The error returned when attempting to convert a raw [`GLenum`] into an actual Rust enum fails. This can happen when
-/// the given `GLenum` value does not match any variants.
-#[derive(Error, Debug)]
-#[error("could not convert `GLenum` value '{original_value:#X}' into enum of type `{attempted_type}`")]
-pub struct EnumConversionError {
-    original_value: GLenum,
-    attempted_type: &'static str,
-}
-
-impl EnumConversionError {
-    pub(crate) const fn new(value: GLenum, name: &'static str) -> Self {
-        Self {
-            original_value: value,
-            attempted_type: name,
-        }
-    }
-}
-
-
-/// The error returned when attempting to convert a raw [`GLbitfield`] into an actual Rust struct fails. This can happen
-/// when the given `GLbitfield` value does not
-#[derive(Error, Debug)]
-#[error("could not convert `GLbitfield` value '{original_value:#b}' into struct of type `{attempted_type}`")]
-pub struct BitfieldConversionError {
-    original_value: GLbitfield,
-    attempted_type: &'static str,
-}
-
-impl BitfieldConversionError {
-    pub(crate) const fn new(value: GLbitfield, name: &'static str) -> Self {
-        Self {
-            original_value: value,
-            attempted_type: name,
-        }
-    }
-}
-
-
-/// An error returned when OpenGL itself fails to create an object.
+/// This error is returned when creating an OpenGL "_object_" fails.
 ///
-/// This error is returned by several functions, and contains no extra details. It corresponds to when an
-/// object-creation function (e.g., [`glCreateShader`] and [`glCreateProgram`]) returns zero.
+/// This error corresponds to when an object-creation function like [`glCreateShader`] or [`glCreateProgram`] returns a
+/// value of zero.  There are no extra details associated with it.
 ///
 /// [`glCreateShader`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateShader.xhtml
 /// [`glCreateProgram`]: https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCreateProgram.xhtml
-#[derive(Error, Debug)]
-#[error("OpenGL could not create {0} object")]
-// note: {0} should *include* article ("a shader" object) ("an ..." object)
-pub struct ObjectCreationError(&'static str);
+#[derive(Error, Debug, Clone, Copy)]
+#[error("OpenGL failed to create {0}.")] // note: {0} should *include* article ("an ..." object)
+pub struct ObjectCreationError(ObjectCreationErrorKind);
 
 impl ObjectCreationError {
-    pub(crate) const fn new(type_name: &'static str) -> Self {
-        Self(type_name)
+    pub(crate) const fn new(kind: ObjectCreationErrorKind) -> Self {
+        Self(kind)
+    }
+}
+
+/// Which object [failed to be created][ObjectCreationError].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectCreationErrorKind {
+    Shader,
+    Program,
+}
+
+impl fmt::Display for ObjectCreationErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Shader => "a shader object",
+            Self::Program => "a program object",
+        })
     }
 }

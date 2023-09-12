@@ -1,5 +1,6 @@
 use gl::types::*;
 
+use crate::gl_convert;
 use crate::types::*;
 
 
@@ -19,7 +20,7 @@ pub fn create_buffers(n: usize) -> Vec<BufferID> {
     }
 
     let mut names = vec![0; n];
-    let n: GLsizei = n.try_into().expect("buffer creation count should fit into `GLsizei`");
+    let n = gl_convert!(n, GLsizei, "number of buffers");
 
     unsafe {
         gl::CreateBuffers(n, names.as_mut_ptr());
@@ -29,26 +30,41 @@ pub fn create_buffers(n: usize) -> Vec<BufferID> {
 }
 
 
+pub fn delete_buffer(buffer: BufferID) {
+    unsafe {
+        // cast is safe because `BufferID` is `repr(transparent)`
+        gl::DeleteBuffers(1, &buffer as *const BufferID as *const _)
+    }
+}
+
+
+pub fn delete_buffers(buffers: &[BufferID]) {
+    let n = gl_convert!(buffers.len(), GLsizei, "number of buffers");
+    let p = buffers.as_ptr().cast(); // cast is safe because `BufferID` is `repr(transparent)`
+    unsafe {
+        gl::DeleteBuffers(n, p);
+    }
+}
+
+
 pub fn bind_buffer(target: BufferTarget, buffer: BufferID) {
     unsafe {
-        gl::BindBuffer(target.into(), buffer.name());
+        gl::BindBuffer(target.raw(), buffer.raw());
     }
 }
 
 
-pub fn buffer_data(target: BufferTarget, data: impl AsRef<[u8]>, usage: BufferUsage) {
-    let data = data.as_ref();
-    let size: GLsizeiptr = data.len().try_into().expect("buffer data size should fit into `GLsizeiptr`");
+pub fn buffer_data(target: BufferTarget, data: &[u8], usage: BufferUsage) {
+    let size = gl_convert!(data.len(), GLsizeiptr, "buffer data size");
     unsafe {
-        gl::BufferData(target.into(), size, data.as_ptr().cast(), usage.into());
+        gl::BufferData(target.raw(), size, data.as_ptr().cast(), usage.raw());
     }
 }
 
 
-pub fn named_buffer_data(buffer: BufferID, data: impl AsRef<[u8]>, usage: BufferUsage) {
-    let data = data.as_ref();
-    let size: GLsizeiptr = data.len().try_into().expect("buffer data size should fit into `GLsizeiptr`");
+pub fn named_buffer_data(buffer: BufferID, data: &[u8], usage: BufferUsage) {
+    let size = gl_convert!(data.len(), GLsizeiptr, "buffer data size");
     unsafe {
-        gl::NamedBufferData(buffer.name(), size, data.as_ptr().cast(), usage.into());
+        gl::NamedBufferData(buffer.raw(), size, data.as_ptr().cast(), usage.raw());
     }
 }

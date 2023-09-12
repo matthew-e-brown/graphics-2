@@ -31,7 +31,7 @@ pub fn create_vertex_arrays(n: usize) -> Vec<VertexArrayID> {
 
 pub fn bind_vertex_array(vao: VertexArrayID) {
     unsafe {
-        gl::BindVertexArray(vao.name());
+        gl::BindVertexArray(vao.raw());
     }
 }
 
@@ -53,7 +53,7 @@ pub fn vertex_attrib_pointer(
     let normalized: GLboolean = normalized.into();
     let stride: GLsizei = stride.try_into().expect("vertex attribute stride should fit into `GLsizei`");
     unsafe {
-        gl::VertexAttribPointer(index, size, attrib_type.into(), normalized, stride, offset as *const _);
+        gl::VertexAttribPointer(index, size, attrib_type.raw(), normalized, stride, offset as *const _);
     }
 }
 
@@ -70,6 +70,6 @@ pub fn draw_arrays(mode: DrawMode, first: usize, count: usize) {
     let first: GLint = first.try_into().expect("array index to draw should fit into `GLint`");
     let count: GLsizei = count.try_into().expect("array count to draw should fit into `GLsizei`");
     unsafe {
-        gl::DrawArrays(mode.into(), first, count);
+        gl::DrawArrays(mode.raw(), first, count);
     }
 }
