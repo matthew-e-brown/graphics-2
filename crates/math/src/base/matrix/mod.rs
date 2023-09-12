@@ -292,7 +292,7 @@ macro_rules! impl_matrix_basics {
             fn index(&self, index: [usize; 2]) -> &Self::Output {
                 let row = index[0];
                 let col = index[1];
-                self.index(col).index(row)
+                self.m.index(col).index(row)
             }
         }
 
@@ -300,7 +300,7 @@ macro_rules! impl_matrix_basics {
             fn index_mut(&mut self, index: [usize; 2]) -> &mut Self::Output {
                 let row = index[0];
                 let col = index[1];
-                self.index_mut(col).index_mut(row)
+                self.m.index_mut(col).index_mut(row)
             }
         }
 
