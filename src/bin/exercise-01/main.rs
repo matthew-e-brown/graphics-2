@@ -55,7 +55,7 @@ pub fn main() {
 
     let vbo = gl::create_buffer();
     gl::bind_buffer(BufferTarget::ArrayBuffer, vbo);
-    gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&VERTICES), BufferUsage::StaticDraw);
+    gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&VERTICES[..]), BufferUsage::StaticDraw);
 
     let vao = gl::create_vertex_array();
     gl::bind_vertex_array(vao);
@@ -94,8 +94,8 @@ pub fn main() {
 
 
 fn compile_and_link_program() -> Result<ProgramID, String> {
-    let vert_shader = gl::create_shader(ShaderType::Vertex).map_err(|e| e.to_string())?;
-    let frag_shader = gl::create_shader(ShaderType::Fragment).map_err(|e| e.to_string())?;
+    let vert_shader = gl::create_shader(ShaderType::Vertex).map_err(|_| "could not create vertex shader")?;
+    let frag_shader = gl::create_shader(ShaderType::Fragment).map_err(|_| "could not create fragment shader")?;
 
     // Just include the entire source-code of the shaders in the binary, for now
     gl::shader_source(vert_shader, &[include_str!("./shader-vert.glsl")]);
@@ -104,7 +104,7 @@ fn compile_and_link_program() -> Result<ProgramID, String> {
     gl::compile_shader(vert_shader)?;
     gl::compile_shader(frag_shader)?;
 
-    let program = gl::create_program().map_err(|e| e.to_string())?;
+    let program = gl::create_program().map_err(|_| "could not create program")?;
     gl::attach_shader(program, vert_shader);
     gl::attach_shader(program, frag_shader);
 
