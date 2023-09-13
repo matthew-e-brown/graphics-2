@@ -5,6 +5,7 @@ authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-gl_generator = "0.14.0"
-thiserror = "1.0.43"
+build = "./build.rs"
+
+[build-dependencies]
+gloog-bindgen = { version = "0.1.0", path = "../bindgen/" }

@@ -15,6 +15,7 @@ glfw = "0.52.0"
 
 [workspace]
 members = [
+    "crates/bindgen",
     "crates/core",
     "crates/math",
     "crates/gloog",

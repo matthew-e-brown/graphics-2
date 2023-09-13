@@ -1,0 +1,10 @@
+[package]
+name = "gloog-bindgen"
+description = "Spec parser and bindings generator for Gloog Core."
+authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+khronos_api = "3.1.0"
+quick-xml = "0.30.0"
