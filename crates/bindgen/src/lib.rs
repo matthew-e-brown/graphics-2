@@ -1,10 +1,14 @@
+/// Generating bindings from a parsed and filtered OpenGL specification.
 pub mod gen;
-pub mod parsing;
+
+/// Parsing the OpenGL specification into a set of features.
+pub mod xml;
+
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use self::parsing::{ByteStr, Command, Enum};
+use self::xml::parsing::{self, ByteStr, Command, Enum};
 
 
 /// A parsed version of the OpenGL XML specification, including/excluding the appropriate types for a specific version

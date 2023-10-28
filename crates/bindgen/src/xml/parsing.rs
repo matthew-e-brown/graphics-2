@@ -1,6 +1,7 @@
+//! Parsing the [OpenGL spec][super::GL_XML] into a set of features to be bindgen'ed.
+
 use std::collections::{BTreeSet, HashSet};
 
-use khronos_api::GL_XML;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
@@ -88,7 +89,7 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
 
     // Start by reading only the `<feature>` tags, which each will add to or remove from the list of features, or will
     // tell us to "reuse" an extension, pushing it into our set.
-    let mut reader = Reader::from_reader(GL_XML);
+    let mut reader = Reader::from_str(super::GL_XML);
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => match tag.name().as_ref() {
@@ -108,7 +109,7 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
 
     // Next, start again go down to the `<extensions>` tag and pick up the extensions requested either by the user or by
     // a feature.
-    let mut reader = Reader::from_reader(GL_XML);
+    let mut reader = Reader::from_str(super::GL_XML);
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => match tag.name().as_ref() {

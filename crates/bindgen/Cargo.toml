@@ -6,5 +6,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-khronos_api = "3.1.0"
 quick-xml = "0.30.0"
