@@ -1,7 +1,9 @@
 //! Parsing the [OpenGL spec][super::GL_XML] into a set of features to be bindgen'ed.
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
+use quick_xml::events::attributes::Attributes;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
@@ -13,6 +15,9 @@ use crate::{Version, API};
 /// We can't use [`CStr`][std::ffi::CStr] because those are required to be NUL-terminated---we have of bytes from a
 /// larger byte-string (`gl.xml`).
 pub type ByteStr<'a> = &'a [u8];
+
+/// Another convenience alias for raw bytes, this time a a [cow][Cow].
+pub type ByteCow<'a> = Cow<'a, [u8]>;
 
 
 /// Parses an `x.y` string into a [tuple of `major, minor` numbers][Version] that can be compared with other version
@@ -44,6 +49,24 @@ fn read_to_end(reader: &mut Reader<ByteStr>, tag: BytesStart) {
     reader
         .read_to_end(tag.name())
         .expect("all tags in OpenGL spec should close properly");
+}
+
+/// Gets the [`Attributes`] iterator from a `quick-xml` start tag.
+///
+/// This is a work-around for a bug in quick-xml where lifetimes are not denoted properly.
+/// - https://github.com/tafia/quick-xml/issues/332
+fn get_attributes<'a, 'r>(start_tag: &'a BytesStart<'r>) -> Attributes<'r> {
+    // SAFETY: As mentioned, the lifetimes on `Attributes` doesn't make any sense. Inspecting the source code:
+    //
+    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/mod.rs#L260-L263
+    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/attributes.rs#L196-L203
+    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/attributes.rs#L227-L238
+    //
+    // What we can see here is that the `&self` parameter on `BytesStart::attributes` ends up taking the place for the
+    // elided lifetime on `Attributes`. This is despite the fact that `Attributes` is akin to `Iter`, and the only thing
+    // it holds a reference to is the original `&self.buf` from the `BytesStart`. Furthermore, the `IterState` struct in
+    // there that powers
+    unsafe { std::mem::transmute::<Attributes<'a>, Attributes<'r>>(start_tag.attributes()) }
 }
 
 
@@ -80,7 +103,7 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
     // Many `<require>` entries actually just build on top of `<extension>` entries; they have a `Reuse [ext]` comment
     // on them. So, instead of parsing things twice, those `<require>` tags will just get their names pushed in here for
     // us to parse once we get to extensions. We don't care about ordering, so `HashSet` instead of a `BTreeSet`.
-    let mut extensions = HashSet::from_iter(extensions.into_iter());
+    let mut extensions = HashSet::from_iter(extensions.into_iter().map(Cow::Borrowed));
     let mut features = BTreeSet::new();
 
     // We read through the XML spec multiple times as we build up the list of things we need to generate bindings and
@@ -107,6 +130,9 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
         }
     }
 
+
+    println!("{:?}", extensions.iter().map(|cow| String::from_utf8_lossy(&cow)).collect::<Vec<_>>());
+
     // Next, start again go down to the `<extensions>` tag and pick up the extensions requested either by the user or by
     // a feature.
     let mut reader = Reader::from_str(super::GL_XML);
@@ -128,11 +154,11 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
 }
 
 
-fn parse_feature<'e>(
+fn parse_feature(
     reader: &mut Reader<ByteStr<'static>>,
     start_tag: BytesStart<'static>,
     api: API,
-    extensions: &mut HashSet<ByteStr<'e>>,
+    extensions: &mut HashSet<ByteCow>,
     features: &mut BTreeSet<Feature>,
 ) {
     // Pull the API name and version off of start tag
@@ -174,16 +200,16 @@ fn parse_feature<'e>(
             }
         }
     } else {
-        reader.read_to_end(start_tag.name());
+        read_to_end(reader, start_tag);
     }
 }
 
 
-fn parse_require_remove<'e>(
+fn parse_require_remove(
     reader: &mut Reader<ByteStr<'static>>,
     start_tag: BytesStart<'static>,
     api: API,
-    extensions: &mut HashSet<ByteStr<'e>>,
+    extensions: &mut HashSet<ByteCow>,
     features: &mut BTreeSet<Feature>,
     is_require: bool,
 ) {
@@ -193,22 +219,26 @@ fn parse_require_remove<'e>(
         println!("Parsing <remove>");
     }
 
-    for attr in start_tag.attributes() {
+    for attr in get_attributes(&start_tag) {
         let attr = attr.expect("OpenGL XML attributes should always be valid");
         match attr.key.as_ref() {
             b"api" if !api.check_api(&attr.value) => return,
             b"profile" if !api.check_profile(&attr.value) => return,
+            // TODO: 'Reuse \w+' is a pretty bad check: there are some 'Reuse tokens' lines in there, too.
             b"comment" if attr.value.starts_with(b"Reuse") => {
                 // read until next space or end
                 let s = b"Reuse ".len();
                 let e = attr.value.iter().skip(s).take_while(|c| !c.is_ascii_whitespace()).count();
-                // ------------------
-                // This breaks.
-                extensions.insert(&attr.value[s..s + e]);
-                // - See here: https://github.com/tafia/quick-xml/issues/332
-                // - It seems like the lack of lifetime on the `Attribute`` return value gives it the lifetime of the
-                //   **BytesStart**'s &self reference, **not** the lifetime of the underlying reader.
-                // ------------------
+                let range = s..s + e;
+
+                // There's a chance that this attribute value has already been cloned. If it has, we need to re-allocate
+                // its range.
+                let new_value = match attr.value {
+                    Cow::Borrowed(slice) => Cow::Borrowed(&slice[range]),
+                    Cow::Owned(vector) => Cow::Owned(vector[range].to_owned()),
+                };
+
+                extensions.insert(new_value);
                 return;
             },
             _ => {},
@@ -217,11 +247,11 @@ fn parse_require_remove<'e>(
 }
 
 
-fn parse_extension<'e>(
-    reader: &mut Reader<ByteStr<'static>>,
+fn parse_extension(
+    reader: &mut Reader<ByteStr>,
     start_tag: BytesStart,
     api: API,
-    extensions: &HashSet<ByteStr<'e>>,
+    extensions: &HashSet<ByteCow>,
     features: &mut BTreeSet<Feature>,
 ) {
     todo!();
