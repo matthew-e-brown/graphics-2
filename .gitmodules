@@ -1,3 +1,4 @@
 [submodule "crates/bindgen/registry/opengl"]
 	path = crates/bindgen/registry/opengl
 	url = https://github.com/KhronosGroup/OpenGL-Registry/
+	shallow = true
