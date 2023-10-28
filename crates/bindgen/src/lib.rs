@@ -95,7 +95,7 @@ impl API {
         }
     }
 
-    pub(crate) fn check_api(&self, api_name: ByteStr) -> bool {
+    pub(crate) fn check_name(&self, api_name: ByteStr) -> bool {
         match (*self, api_name) {
             (API::GL { .. }, b"gl") => true,
             (API::GLES { .. }, b"gles1" | b"gles2") => true,
@@ -106,7 +106,7 @@ impl API {
     }
 
     /// Checks whether or not the provided API name at the given version should be included in the spec.
-    pub(crate) fn check_version(&self, api_name: ByteStr, api_ver: Version) -> bool {
+    pub(crate) fn check_name_and_version(&self, api_name: ByteStr, api_ver: Version) -> bool {
         match (*self, api_name) {
             // Compatible if our version is the same or newer
             (API::GL { version: self_ver, .. }, b"gl") if api_ver <= self_ver => true,
@@ -122,16 +122,28 @@ impl API {
             // (https://registry.khronos.org/OpenGL/index_sc.php)
             (API::GLSC { version: self_ver, .. }, b"glsc2") if self_ver.0 >= 2 && api_ver <= self_ver => true,
 
+            // Looking at the XML, this branch shouldn't ever happen, but technically 'glcore' should be compatible with
+            // everything, I think.
+            (_, b"glcore") if api_ver <= self.version() => true,
+
             // Anything else doesn't match.
             _ => false,
         }
     }
 
     pub(crate) fn check_profile(&self, profile_name: ByteStr) -> bool {
-        match (*self, profile_name) {
-            (API::GL { profile, .. }, b"profile") => todo!(),
-            (API::GLES { profile, .. }, b"") => todo!(),
-            (API::GLSC { .. }, b"") => todo!(),
+        match *self {
+            API::GL { profile, .. } => match (profile, profile_name) {
+                (GLProfile::Core, b"core") => true,
+                (GLProfile::Compatibility, b"compatibility") => true,
+                _ => false,
+            },
+            API::GLES { profile, .. } => match (profile, profile_name) {
+                (GLESProfile::Common, b"common") => true,
+                (GLESProfile::Compatibility, b"compatibility") => true,
+                _ => false,
+            },
+            API::GLSC { .. } => panic!("GLSC has no 'profiles'"), // TODO: proper Results?
             _ => false,
         }
     }

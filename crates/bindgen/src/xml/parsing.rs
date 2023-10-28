@@ -1,9 +1,7 @@
 //! Parsing the [OpenGL spec][super::GL_XML] into a set of features to be bindgen'ed.
 
-use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
-use quick_xml::events::attributes::Attributes;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
@@ -17,7 +15,7 @@ use crate::{Version, API};
 pub type ByteStr<'a> = &'a [u8];
 
 /// Another convenience alias for raw bytes, this time a a [cow][Cow].
-pub type ByteCow<'a> = Cow<'a, [u8]>;
+pub type ByteCow<'a> = std::borrow::Cow<'a, [u8]>;
 
 
 /// Parses an `x.y` string into a [tuple of `major, minor` numbers][Version] that can be compared with other version
@@ -45,28 +43,17 @@ fn invalid_xml(reader: &Reader<ByteStr>, err: quick_xml::Error) -> ! {
 
 /// Another wrapper, just to shrink the number of lines in match statements (`read_to_end` returns a span, and we want
 /// to ignore it, but sticking a semicolon there makes rustfmt put it across multiple lines).
-fn read_to_end(reader: &mut Reader<ByteStr>, tag: BytesStart) {
+fn read_to_end(reader: &mut Reader<ByteStr>, tag: &BytesStart) {
     reader
         .read_to_end(tag.name())
-        .expect("all tags in OpenGL spec should close properly");
+        .expect("all tags in OpenGL XML spec should close properly");
 }
 
-/// Gets the [`Attributes`] iterator from a `quick-xml` start tag.
-///
-/// This is a work-around for a bug in quick-xml where lifetimes are not denoted properly.
-/// - https://github.com/tafia/quick-xml/issues/332
-fn get_attributes<'a, 'r>(start_tag: &'a BytesStart<'r>) -> Attributes<'r> {
-    // SAFETY: As mentioned, the lifetimes on `Attributes` doesn't make any sense. Inspecting the source code:
-    //
-    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/mod.rs#L260-L263
-    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/attributes.rs#L196-L203
-    // - https://github.com/tafia/quick-xml/blob/v0.31.0/src/events/attributes.rs#L227-L238
-    //
-    // What we can see here is that the `&self` parameter on `BytesStart::attributes` ends up taking the place for the
-    // elided lifetime on `Attributes`. This is despite the fact that `Attributes` is akin to `Iter`, and the only thing
-    // it holds a reference to is the original `&self.buf` from the `BytesStart`. Furthermore, the `IterState` struct in
-    // there that powers
-    unsafe { std::mem::transmute::<Attributes<'a>, Attributes<'r>>(start_tag.attributes()) }
+/// Wrapper for getting an attribute from a start tag and panicking if it could not be parsed.
+fn get_attr<'a, 'b>(tag: &'a BytesStart, key: ByteStr<'b>) -> Option<ByteCow<'a>> {
+    tag.try_get_attribute(key)
+        .expect("failed to parse attribute from OpenGL XML spec")
+        .map(|attr| attr.value)
 }
 
 
@@ -99,27 +86,43 @@ lossy_debug!(enum Feature {
 });
 
 
-pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = ByteStr<'e>>) -> BTreeSet<Feature> {
-    // Many `<require>` entries actually just build on top of `<extension>` entries; they have a `Reuse [ext]` comment
-    // on them. So, instead of parsing things twice, those `<require>` tags will just get their names pushed in here for
-    // us to parse once we get to extensions. We don't care about ordering, so `HashSet` instead of a `BTreeSet`.
-    let mut extensions = HashSet::from_iter(extensions.into_iter().map(Cow::Borrowed));
+pub fn build_feature_set<'e>(api_config: API, extensions: impl IntoIterator<Item = ByteStr<'e>>) -> BTreeSet<Feature> {
+    let extensions = HashSet::<_>::from_iter(extensions.into_iter());
     let mut features = BTreeSet::new();
 
-    // We read through the XML spec multiple times as we build up the list of things we need to generate bindings and
-    // types for. Our string is static and constant, so there's not really any harm in restarting our reader multiple
-    // times.
+    let include_extension = |tag: &BytesStart| {
+        let ext = get_attr(tag, b"name").expect("all <extension> tags should have a 'name' attribute");
+        let sup = get_attr(tag, b"supported").expect("all <extension> tags should have a 'supported' attribute");
+        if extensions.contains(&ext[..]) {
+            for supported in sup.split(|&c| c == b'|') {
+                if api_config.check_name(supported) {
+                    return true;
+                }
+            }
+            // TODO: Results
+            panic!("Requested unsupported extension, '{}'", String::from_utf8_lossy(&ext))
+        } else {
+            false
+        }
+    };
 
-    // Start by reading only the `<feature>` tags, which each will add to or remove from the list of features, or will
-    // tell us to "reuse" an extension, pushing it into our set.
+    let include_feature = |tag: &BytesStart| {
+        let api = get_attr(tag, b"api").expect("all <feature> tags should have an 'api' attribute");
+        let ver = get_attr(tag, b"number").expect("all <feature> tags should have a 'number' attribute");
+        let ver = parse_version(&ver);
+        api_config.check_name_and_version(&api, ver)
+    };
+
     let mut reader = Reader::from_str(super::GL_XML);
     loop {
         match reader.read_event() {
             Ok(Event::Start(tag)) => match tag.name().as_ref() {
-                b"registry" => continue, // Step into <registry>
-                b"feature" => parse_feature(&mut reader, tag, api, &mut extensions, &mut features),
+                b"registry" => continue,   // Step into <registry>
+                b"extensions" => continue, // Step into <extensions>
+                b"feature" if include_feature(&tag) => parse_feature(&mut reader, tag, api_config, &mut features),
+                b"extension" if include_extension(&tag) => parse_feature(&mut reader, tag, api_config, &mut features),
                 // completely skip over any other tag; `continue` would unnecessarily step into everything
-                _ => read_to_end(&mut reader, tag),
+                _ => read_to_end(&mut reader, &tag),
             },
             // Hitting the end of the file means we're finished
             Ok(Event::Eof) => break,
@@ -130,131 +133,61 @@ pub fn build_feature_set<'e>(api: API, extensions: impl IntoIterator<Item = Byte
         }
     }
 
-
-    println!("{:?}", extensions.iter().map(|cow| String::from_utf8_lossy(&cow)).collect::<Vec<_>>());
-
-    // Next, start again go down to the `<extensions>` tag and pick up the extensions requested either by the user or by
-    // a feature.
-    let mut reader = Reader::from_str(super::GL_XML);
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(tag)) => match tag.name().as_ref() {
-                b"registry" => continue,   // step into <registry>
-                b"extensions" => continue, // step into <extensions>
-                b"extension" => parse_extension(&mut reader, tag, api, &extensions, &mut features),
-                _ => read_to_end(&mut reader, tag),
-            },
-            Ok(Event::Eof) => break,
-            Ok(_) => continue,
-            Err(e) => invalid_xml(&reader, e),
-        }
-    }
-
     features
 }
 
 
 fn parse_feature(
-    reader: &mut Reader<ByteStr<'static>>,
-    start_tag: BytesStart<'static>,
-    api: API,
-    extensions: &mut HashSet<ByteCow>,
-    features: &mut BTreeSet<Feature>,
-) {
-    // Pull the API name and version off of start tag
-    let mut feat_api = None;
-    let mut feat_ver = None;
-
-    for attr in start_tag.attributes() {
-        let attr = attr.expect("OpenGL XML attributes should always be valid");
-        match attr.key.as_ref() {
-            b"api" => feat_api = Some(attr.value),
-            b"number" => feat_ver = Some(attr.value),
-            _ => {},
-        }
-    }
-
-    let feat_api = &feat_api.expect("<feature> elements should always have an 'api' attribute")[..];
-    let feat_ver = feat_ver.expect("<feature> elements should always have a 'number' attribute");
-    let feat_ver = parse_version(&feat_ver);
-
-    // If this version of this API belongs in the requested feature-set, start parsing it
-    if api.check_version(feat_api, feat_ver) {
-        // Start looking for <require> tags
-        loop {
-            match reader.read_event() {
-                Ok(Event::Start(tag)) => match tag.name().as_ref() {
-                    b"require" => parse_require_remove(reader, tag, api, extensions, features, true),
-                    b"remove" => parse_require_remove(reader, tag, api, extensions, features, false),
-                    // there should never be any other tags; ignore just in case.
-                    _ => read_to_end(reader, tag),
-                },
-                // If we find a </feature>, we are finished.
-                Ok(Event::End(tag)) => match tag.name().as_ref() {
-                    b"feature" => break,
-                    _ => continue, // ignore other end tags
-                },
-                Ok(Event::Eof) => panic!("found EOF before closing </feature> tag"),
-                Ok(_) => continue,
-                Err(e) => invalid_xml(reader, e),
-            }
-        }
-    } else {
-        read_to_end(reader, start_tag);
-    }
-}
-
-
-fn parse_require_remove(
-    reader: &mut Reader<ByteStr<'static>>,
-    start_tag: BytesStart<'static>,
-    api: API,
-    extensions: &mut HashSet<ByteCow>,
-    features: &mut BTreeSet<Feature>,
-    is_require: bool,
-) {
-    if is_require {
-        println!("Parsing <require>");
-    } else {
-        println!("Parsing <remove>");
-    }
-
-    for attr in get_attributes(&start_tag) {
-        let attr = attr.expect("OpenGL XML attributes should always be valid");
-        match attr.key.as_ref() {
-            b"api" if !api.check_api(&attr.value) => return,
-            b"profile" if !api.check_profile(&attr.value) => return,
-            // TODO: 'Reuse \w+' is a pretty bad check: there are some 'Reuse tokens' lines in there, too.
-            b"comment" if attr.value.starts_with(b"Reuse") => {
-                // read until next space or end
-                let s = b"Reuse ".len();
-                let e = attr.value.iter().skip(s).take_while(|c| !c.is_ascii_whitespace()).count();
-                let range = s..s + e;
-
-                // There's a chance that this attribute value has already been cloned. If it has, we need to re-allocate
-                // its range.
-                let new_value = match attr.value {
-                    Cow::Borrowed(slice) => Cow::Borrowed(&slice[range]),
-                    Cow::Owned(vector) => Cow::Owned(vector[range].to_owned()),
-                };
-
-                extensions.insert(new_value);
-                return;
-            },
-            _ => {},
-        }
-    }
-}
-
-
-fn parse_extension(
     reader: &mut Reader<ByteStr>,
     start_tag: BytesStart,
-    api: API,
-    extensions: &HashSet<ByteCow>,
+    api_config: API,
     features: &mut BTreeSet<Feature>,
 ) {
-    todo!();
+    println!("Parsing feature {start_tag:?}");
+
+    let include_require = |tag: &BytesStart| {
+        // Get the API name, check it against the config; if one wasn't found, default to true. Same logic for the
+        // profile: check_profile will panic if the user selected GLSC as their API (since it has no profiles); but,
+        // that'll never happen because either, (a) the block this <require>/<remove> was found in would have had a
+        // different non-GLSC API on it, or (b) this API check will find it and short-circuit the check_profile.
+        let api = get_attr(tag, b"api")
+            .and_then(|name| Some(api_config.check_name(&name)))
+            .unwrap_or(true);
+        api || get_attr(tag, b"profile")
+            .and_then(|name| Some(api_config.check_profile(&name)))
+            .unwrap_or(true)
+    };
+
+    // Start looking for <require> and <remove> tags
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(tag)) => match tag.name().as_ref() {
+                b"require" if include_require(&tag) => parse_require(reader, &tag, api_config, features, false),
+                b"remove" if include_require(&tag) => parse_require(reader, &tag, api_config, features, true),
+                // there should never be any other tags; ignore just in case.
+                _ => read_to_end(reader, &tag),
+            },
+            // If we find a </feature>, we are finished.
+            Ok(Event::End(tag)) => match tag.name().as_ref() {
+                b"feature" => break,
+                _ => continue, // ignore other end tags
+            },
+            Ok(Event::Eof) => panic!("found EOF before closing </feature> tag"),
+            Ok(_) => continue,
+            Err(e) => invalid_xml(reader, e),
+        }
+    }
+}
+
+
+fn parse_require<'r: 't, 't>(
+    reader: &mut Reader<ByteStr<'r>>,
+    start_tag: &BytesStart<'r>,
+    api: API,
+    features: &mut BTreeSet<Feature>,
+    negate: bool,
+) {
+    println!("\tParsing require {start_tag:?}");
 }
 
 
