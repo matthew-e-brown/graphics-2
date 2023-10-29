@@ -1,5 +1,6 @@
 //! Parsing the [OpenGL spec][super::GL_XML] into a set of features to be bindgen'ed.
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 
 use quick_xml::events::{BytesStart, Event};
@@ -15,7 +16,7 @@ use crate::{Version, API};
 pub type ByteStr<'a> = &'a [u8];
 
 /// Another convenience alias for raw bytes, this time a a [cow][Cow].
-pub type ByteCow<'a> = std::borrow::Cow<'a, [u8]>;
+pub type ByteCow<'a> = Cow<'a, [u8]>;
 
 
 /// Parses an `x.y` string into a [tuple of `major, minor` numbers][Version] that can be compared with other version
@@ -36,21 +37,24 @@ fn parse_version(text: ByteStr) -> Version {
     (maj, min)
 }
 
-/// Wrapper for panicking, because I'm too lazy to type out the same message every time.
-fn invalid_xml(reader: &Reader<ByteStr>, err: quick_xml::Error) -> ! {
-    panic!("encountered invalid XML in OpenGL spec at position {}: {:?}", reader.buffer_position(), err)
+/// A wrapper for panicking if an XML event cannot be retrieved properly.
+fn read<'a, 'r: 'a>(reader: &'a mut Reader<ByteStr<'r>>) -> Event<'r> {
+    reader.read_event().unwrap_or_else(|err| {
+        let pos = reader.buffer_position();
+        panic!("encountered invalid XML in OpenGL spec at position {pos}: {err:?}");
+    })
 }
 
-/// Another wrapper, just to shrink the number of lines in match statements (`read_to_end` returns a span, and we want
-/// to ignore it, but sticking a semicolon there makes rustfmt put it across multiple lines).
-fn read_to_end(reader: &mut Reader<ByteStr>, tag: &BytesStart) {
+/// Wrapper to shrink the number of lines in match statements. (`read_to_end` returns a `Span``, and we want to ignore
+/// it, but sticking a semicolon there makes rustfmt put it across multiple lines).
+fn read_to_end<'a, 'r: 'a>(reader: &'a mut Reader<ByteStr<'r>>, tag: &'a BytesStart<'r>) {
     reader
         .read_to_end(tag.name())
         .expect("all tags in OpenGL XML spec should close properly");
 }
 
 /// Wrapper for getting an attribute from a start tag and panicking if it could not be parsed.
-fn get_attr<'a, 'b>(tag: &'a BytesStart, key: ByteStr<'b>) -> Option<ByteCow<'a>> {
+fn get_attr<'a>(tag: &'a BytesStart<'a>, key: ByteStr<'static>) -> Option<ByteCow<'a>> {
     tag.try_get_attribute(key)
         .expect("failed to parse attribute from OpenGL XML spec")
         .map(|attr| attr.value)
@@ -74,9 +78,9 @@ fn get_attr<'a, 'b>(tag: &'a BytesStart, key: ByteStr<'b>) -> Option<ByteCow<'a>
 /// further.
 #[derive(Clone)]
 pub enum Feature {
-    Command(ByteStr<'static>),
-    Type(ByteStr<'static>),
-    Enum(ByteStr<'static>),
+    Command(ByteCow<'static>),
+    Type(ByteCow<'static>),
+    Enum(ByteCow<'static>),
 }
 
 lossy_debug!(enum Feature {
@@ -115,21 +119,19 @@ pub fn build_feature_set<'e>(api_config: API, extensions: impl IntoIterator<Item
 
     let mut reader = Reader::from_str(super::GL_XML);
     loop {
-        match reader.read_event() {
-            Ok(Event::Start(tag)) => match tag.name().as_ref() {
+        match read(&mut reader) {
+            Event::Start(tag) => match tag.name().as_ref() {
                 b"registry" => continue,   // Step into <registry>
                 b"extensions" => continue, // Step into <extensions>
-                b"feature" if include_feature(&tag) => parse_feature(&mut reader, tag, api_config, &mut features),
-                b"extension" if include_extension(&tag) => parse_feature(&mut reader, tag, api_config, &mut features),
+                b"feature" if include_feature(&tag) => parse_feature(&mut reader, api_config, &mut features),
+                b"extension" if include_extension(&tag) => parse_feature(&mut reader, api_config, &mut features),
                 // completely skip over any other tag; `continue` would unnecessarily step into everything
                 _ => read_to_end(&mut reader, &tag),
             },
             // Hitting the end of the file means we're finished
-            Ok(Event::Eof) => break,
+            Event::Eof => break,
             // We don't care about any other elements yet
-            Ok(_) => continue,
-            // Shouldn't happen, since the XML comes directly from Khronos and is static, so should always be valid.
-            Err(e) => invalid_xml(&reader, e),
+            _ => continue,
         }
     }
 
@@ -137,14 +139,8 @@ pub fn build_feature_set<'e>(api_config: API, extensions: impl IntoIterator<Item
 }
 
 
-fn parse_feature(
-    reader: &mut Reader<ByteStr>,
-    start_tag: BytesStart,
-    api_config: API,
-    features: &mut BTreeSet<Feature>,
-) {
-    println!("Parsing feature {start_tag:?}");
-
+/// Parses all of the tags from within a `<feature>` or `<extension>` tag.
+fn parse_feature<'a>(reader: &'a mut Reader<ByteStr<'static>>, api_config: API, features: &'a mut BTreeSet<Feature>) {
     let include_require = |tag: &BytesStart| {
         // Get the API name, check it against the config; if one wasn't found, default to true. Same logic for the
         // profile: check_profile will panic if the user selected GLSC as their API (since it has no profiles); but,
@@ -160,34 +156,47 @@ fn parse_feature(
 
     // Start looking for <require> and <remove> tags
     loop {
-        match reader.read_event() {
-            Ok(Event::Start(tag)) => match tag.name().as_ref() {
-                b"require" if include_require(&tag) => parse_require(reader, &tag, api_config, features, false),
-                b"remove" if include_require(&tag) => parse_require(reader, &tag, api_config, features, true),
+        match read(reader) {
+            Event::Start(tag) => match tag.name().as_ref() {
+                b"require" if include_require(&tag) => parse_feature_list(reader, features, false),
+                b"remove" if include_require(&tag) => parse_feature_list(reader, features, true),
                 // there should never be any other tags; ignore just in case.
                 _ => read_to_end(reader, &tag),
             },
-            // If we find a </feature>, we are finished.
-            Ok(Event::End(tag)) => match tag.name().as_ref() {
+            // If we find a </feature> or </extension>, we are finished.
+            Event::End(tag) => match tag.name().as_ref() {
                 b"feature" => break,
+                b"extension" => break,
                 _ => continue, // ignore other end tags
             },
-            Ok(Event::Eof) => panic!("found EOF before closing </feature> tag"),
-            Ok(_) => continue,
-            Err(e) => invalid_xml(reader, e),
+            Event::Eof => panic!("found EOF before closing </feature> or </extension> tag"),
+            _ => continue,
         }
     }
 }
 
-
-fn parse_require<'r: 't, 't>(
-    reader: &mut Reader<ByteStr<'r>>,
-    start_tag: &BytesStart<'r>,
-    api: API,
-    features: &mut BTreeSet<Feature>,
-    negate: bool,
-) {
-    println!("\tParsing require {start_tag:?}");
+/// Parses all of the features from a given `<require>` or `<remove>`.
+///
+/// If `negate` is true, features will be removed from the `features` set.
+fn parse_feature_list<'a>(reader: &'a mut Reader<ByteStr<'static>>, features: &'a mut BTreeSet<Feature>, negate: bool) {
+    loop {
+        match read(reader) {
+            Event::Empty(tag) => {
+                let tag = tag.into_owned();
+                let attr = tag.try_get_attribute(b"name").unwrap().unwrap();
+                let name_attr = get_attr(&tag, b"name").unwrap();
+                let feat = match tag.name().as_ref() {
+                    b"type" => Feature::Type(name_attr.clone()),
+                    b"enum" => Feature::Enum(name_attr.clone()),
+                    b"command" => Feature::Command(name_attr.clone()),
+                    other => panic!("unknown feature: {}", String::from_utf8_lossy(other)),
+                };
+            },
+            Event::End(_) => todo!(),
+            Event::Eof => panic!("found EOF before closing </require> or </remove> tag"),
+            _ => {},
+        }
+    }
 }
 
 
