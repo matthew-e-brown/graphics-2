@@ -11,5 +11,6 @@ pub fn main() {
             profile: GLProfile::Core,
         },
         [],
-    ).unwrap();
+    )
+    .unwrap();
 }
