@@ -1,54 +1,51 @@
-/// Generating bindings from a parsed and filtered OpenGL specification.
+/// Generating bindings from a set of features.
 pub mod gen;
 
 /// Parsing the OpenGL specification into a set of features.
 pub mod xml;
 
 
-use std::collections::{HashMap, HashSet};
-use std::io::Write;
+use std::io::{self, Write};
 
-use self::xml::parsing::{self, ByteStr, Command, Enum};
-
-
-/// A parsed version of the OpenGL XML specification, including/excluding the appropriate types for a specific version
-/// and set of extensions, ready to be written to Rust bindings.
-#[derive(Debug, Clone)]
-pub struct Spec {
-    /// Function bindings to output based on commands like `glVertexAttribPointer`.
-    pub commands: HashSet<Command>,
-    /// A mapping of GL alias to C type; `GLenum` -> `unsigned int`.
-    pub type_defs: HashMap<ByteStr<'static>, ByteStr<'static>>,
-    /// Global constants like `GL_TRIANGLE_FAN`. All of them belong to some group, and they will be grouped into actual
-    /// Rust enums for our purposes.
-    pub regular_enum_groups: HashMap<ByteStr<'static>, Vec<Enum>>,
-    /// Global constants like `GL_COLOR_BUFFER_BIT`; almost the same as the regular enums, but these are meant to be
-    /// OR'd together to pass multiple flags at once.
-    pub bitmask_enum_groups: HashMap<ByteStr<'static>, Vec<Enum>>,
-}
+use roxmltree::Document;
 
 
-impl Spec {
-    /// Load and parse a version of the OpenGL spec from XML source.
-    ///
-    /// Note that the API version is **not** checked for correctness. It is only used for comparison, i.e. used to
-    /// filter out parts of the spec that are for versions below the provided one. If you pass `(0, 0)`, you will be a
-    /// returned a valid, *empty* spec; if you pass `(999, 999)`, you'll get back a spec with just about everything.
-    pub fn load<'a, I: IntoIterator<Item = &'a str>>(api: API, extensions: I) -> Self {
-        let extensions = extensions.into_iter().map(|ext| ext.as_bytes());
+pub fn output_bindings<'e, T: Write>(
+    mut _output: T,
+    api: API,
+    extensions: impl IntoIterator<Item = &'e str>,
+) -> io::Result<()> {
+    let gl_xml = Document::parse(xml::GL_XML).expect("Unable to parse OpenGL XML spec.");
+    let features = xml::loading::load_features(&gl_xml, api, extensions);
 
-        // Run through the XML once to build the list of features we need
-        let features = parsing::build_feature_set(api, extensions);
-
-        // Run through the spec a second time, this time using the parsed set of features
-        todo!()
+    for feature in features {
+        println!("{feature:?}");
     }
 
-
-    pub fn write<T: Write>(&self, mut output: T) -> std::io::Result<()> {
-        Ok(())
-    }
+    Ok(())
 }
+
+// impl Spec {
+//     /// Load and parse a version of the OpenGL spec from XML source.
+//     ///
+//     /// Note that the API version is **not** checked for correctness. It is only used for comparison, i.e. used to
+//     /// filter out parts of the spec that are for versions below the provided one. If you pass `(0, 0)`, you will be a
+//     /// returned a valid, *empty* spec; if you pass `(999, 999)`, you'll get back a spec with just about everything.
+//     pub fn load<'a, I: IntoIterator<Item = &'a str>>(api: API, extensions: I) -> Self {
+//         let extensions = extensions.into_iter().map(|ext| ext.as_bytes());
+
+//         // Run through the XML once to build the list of features we need
+//         let features = build_feature_set(api, extensions);
+
+//         // Run through the spec a second time, this time using the parsed set of features
+//         todo!()
+//     }
+
+
+//     pub fn write<T: Write>(&self, mut output: T) -> std::io::Result<()> {
+//         Ok(())
+//     }
+// }
 
 
 /// A `major.minor` version number.
@@ -87,7 +84,7 @@ pub enum GLESProfile {
 }
 
 impl API {
-    pub fn version(&self) -> Version {
+    pub const fn version(&self) -> Version {
         match *self {
             API::GL { version, .. } => version,
             API::GLES { version, .. } => version,
@@ -95,56 +92,34 @@ impl API {
         }
     }
 
-    pub(crate) fn check_name(&self, api_name: ByteStr) -> bool {
+    pub(crate) fn check_name(&self, api_name: &str) -> bool {
         match (*self, api_name) {
-            (API::GL { .. }, b"gl") => true,
-            (API::GLES { .. }, b"gles1" | b"gles2") => true,
-            (API::GLSC { .. }, b"glsc2") => true,
-            (_, b"glcore") => true,
+            (API::GL { .. }, "gl") => true,
+            (API::GLES { version, .. }, "gles1") if version.0 == 1 => true,
+            (API::GLES { version, .. }, "gles2") if version.0 >= 1 => true,
+            (API::GLSC { .. }, "glsc2") => true,
+            (_, "glcore") => true,
             _ => false,
         }
     }
 
-    /// Checks whether or not the provided API name at the given version should be included in the spec.
-    pub(crate) fn check_name_and_version(&self, api_name: ByteStr, api_ver: Version) -> bool {
-        match (*self, api_name) {
-            // Compatible if our version is the same or newer
-            (API::GL { version: self_ver, .. }, b"gl") if api_ver <= self_ver => true,
-
-            // gles1 and gles2 are mutually exclusive; `gles2` supersedes all of `gles1`. So `gles1 1.0` is only
-            // compatible if our version starts with a 1 or lower **and** if its version is lower than ours.
-            (API::GLES { version: self_ver, .. }, b"gles1") if self_ver.0 == 1 && api_ver <= self_ver => true,
-
-            // gles2 appears for versions 2.x _and_ 3.x and higher.
-            (API::GLES { version: self_ver, .. }, b"gles2") if self_ver.0 >= 2 && api_ver <= self_ver => true,
-
-            // Only glsc2 is included in the XML spec; 1.0 only existed as a header file
-            // (https://registry.khronos.org/OpenGL/index_sc.php)
-            (API::GLSC { version: self_ver, .. }, b"glsc2") if self_ver.0 >= 2 && api_ver <= self_ver => true,
-
-            // Looking at the XML, this branch shouldn't ever happen, but technically 'glcore' should be compatible with
-            // everything, I think.
-            (_, b"glcore") if api_ver <= self.version() => true,
-
-            // Anything else doesn't match.
-            _ => false,
-        }
+    pub(crate) fn check_version(&self, api_ver: Version) -> bool {
+        api_ver <= self.version()
     }
 
-    pub(crate) fn check_profile(&self, profile_name: ByteStr) -> bool {
+    pub(crate) fn check_profile(&self, profile_name: &str) -> bool {
         match *self {
             API::GL { profile, .. } => match (profile, profile_name) {
-                (GLProfile::Core, b"core") => true,
-                (GLProfile::Compatibility, b"compatibility") => true,
+                (GLProfile::Core, "core") => true,
+                (GLProfile::Compatibility, "compatibility") => true,
                 _ => false,
             },
             API::GLES { profile, .. } => match (profile, profile_name) {
-                (GLESProfile::Common, b"common") => true,
-                (GLESProfile::Compatibility, b"compatibility") => true,
+                (GLESProfile::Common, "common") => true,
+                (GLESProfile::Compatibility, "compatibility") => true,
                 _ => false,
             },
             API::GLSC { .. } => panic!("GLSC has no 'profiles'"), // TODO: proper Results?
-            _ => false,
         }
     }
 }
