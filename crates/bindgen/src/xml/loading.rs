@@ -1,13 +1,13 @@
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 
-use roxmltree::{Document, Node, StringStorage};
+pub use roxmltree::Document as XmlDocument;
+use roxmltree::Node;
 
 use crate::{Version, API};
 
 
-/// Parses an `x.y` string into a [tuple of `major, minor` numbers][Version] that can be compared with other version
-/// numbers.
+/// Parses an `x.y` string into a tuple of `major, minor` [version numbers][Version] that can be compared with other
+/// version numbers.
 fn parse_version(text: &str) -> Version {
     // If there is no '.' in the version string, assume it's a single-number, major-only version (e.g. '2' = 2.0).
     let (maj, min) = match text.chars().position(|c| c == '.') {
@@ -22,31 +22,19 @@ fn parse_version(text: &str) -> Version {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Feature<'a> {
-    Command(StringStorage<'a>),
-    Type(StringStorage<'a>),
-    Enum(StringStorage<'a>),
-}
-
-impl Hash for Feature<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
-        let text: &str = match self {
-            Feature::Command(str) => str,
-            Feature::Type(str) => str,
-            Feature::Enum(str) => str,
-        };
-        text.hash(state);
-    }
+#[derive(Debug, Clone, Default)]
+pub struct FeatureSet<'a> {
+    pub types: HashSet<&'a str>,
+    pub enums: HashSet<&'a str>,
+    pub commands: HashSet<&'a str>,
 }
 
 
-pub fn load_features<'a, 'e, 'input>(
-    gl_xml: &'a Document<'input>,
+pub fn load_features<'a, 'input, 'e, E: IntoIterator<Item = &'e str>>(
+    gl_xml: &'a XmlDocument<'input>,
     api_config: API,
-    extensions: impl IntoIterator<Item = &'e str>,
-) -> HashSet<Feature<'input>> {
+    extensions: E,
+) -> FeatureSet<'a> {
     let extensions = HashSet::<_>::from_iter(extensions.into_iter());
 
     // There should always be a 'registry' tag as the first child
@@ -72,7 +60,7 @@ pub fn load_features<'a, 'e, 'input>(
     };
 
     // First thing's first, we need to find all the `<feature>` and `<extension>` tags
-    let mut features = HashSet::new();
+    let mut features = FeatureSet::default();
     for el in registry.children().filter(|node| node.is_element()) {
         match el.tag_name().name() {
             // Feature tags are one each
@@ -90,7 +78,7 @@ pub fn load_features<'a, 'e, 'input>(
 }
 
 
-fn read_feature<'a, 'input>(api_config: API, feat_tag: Node<'a, 'input>, features: &mut HashSet<Feature<'input>>) {
+fn read_feature<'a, 'input>(api_config: API, feat_tag: Node<'a, 'input>, features: &mut FeatureSet<'a>) {
     for el in feat_tag.children().filter(|node| node.is_element()) {
         match el.tag_name().name() {
             "require" => read_require(api_config, el, features, false),
@@ -101,12 +89,7 @@ fn read_feature<'a, 'input>(api_config: API, feat_tag: Node<'a, 'input>, feature
 }
 
 
-fn read_require<'a, 'input>(
-    api_config: API,
-    req_tag: Node<'a, 'input>,
-    features: &mut HashSet<Feature<'input>>,
-    negate: bool,
-) {
+fn read_require<'a, 'input>(api_config: API, req_tag: Node<'a, 'input>, features: &mut FeatureSet<'a>, negate: bool) {
     for el in req_tag.children().filter(|node| node.is_element()) {
         // First check and see if there's an API or profile attribute on this tag; if so, check support for it.
         // Otherwise, it's supported by default.
@@ -120,22 +103,18 @@ fn read_require<'a, 'input>(
             continue;
         }
 
-        // Go all the way down to the attribute's raw value storage and extract the value that has been borrowed from
-        // the original input string
-        let name_attr = el.attribute_node("name").unwrap();
-        let name = name_attr.value_storage().clone(); // either an `Arc<str>` or literally just a reference
-
-        let feature = match el.tag_name().name() {
-            "type" => Feature::Type(name),
-            "enum" => Feature::Enum(name),
-            "command" => Feature::Command(name),
+        let name = el.attribute("name").unwrap();
+        let el_type = match el.tag_name().name() {
+            "type" => &mut features.types,
+            "enum" => &mut features.enums,
+            "command" => &mut features.commands,
             other => panic!("unknown element in <require> or <remove>: {other:?}"),
         };
 
         if negate {
-            features.remove(&feature);
+            el_type.remove(&name);
         } else {
-            features.insert(feature);
+            el_type.insert(&name);
         }
     }
 }

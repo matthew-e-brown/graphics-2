@@ -10,42 +10,16 @@ use std::io::{self, Write};
 use roxmltree::Document;
 
 
-pub fn output_bindings<'e, T: Write>(
-    mut _output: T,
-    api: API,
-    extensions: impl IntoIterator<Item = &'e str>,
-) -> io::Result<()> {
+pub fn generate_bindings<'e, T, E>(mut output: T, api: API, extensions: E) -> io::Result<()>
+where
+    T: Write,
+    E: IntoIterator<Item = &'e str>,
+{
     let gl_xml = Document::parse(xml::GL_XML).expect("Unable to parse OpenGL XML spec.");
     let features = xml::loading::load_features(&gl_xml, api, extensions);
-
-    for feature in features {
-        println!("{feature:?}");
-    }
-
+    let registry = xml::parsing::parse_features(&gl_xml, &features);
     Ok(())
 }
-
-// impl Spec {
-//     /// Load and parse a version of the OpenGL spec from XML source.
-//     ///
-//     /// Note that the API version is **not** checked for correctness. It is only used for comparison, i.e. used to
-//     /// filter out parts of the spec that are for versions below the provided one. If you pass `(0, 0)`, you will be a
-//     /// returned a valid, *empty* spec; if you pass `(999, 999)`, you'll get back a spec with just about everything.
-//     pub fn load<'a, I: IntoIterator<Item = &'a str>>(api: API, extensions: I) -> Self {
-//         let extensions = extensions.into_iter().map(|ext| ext.as_bytes());
-
-//         // Run through the XML once to build the list of features we need
-//         let features = build_feature_set(api, extensions);
-
-//         // Run through the spec a second time, this time using the parsed set of features
-//         todo!()
-//     }
-
-
-//     pub fn write<T: Write>(&self, mut output: T) -> std::io::Result<()> {
-//         Ok(())
-//     }
-// }
 
 
 /// A `major.minor` version number.
