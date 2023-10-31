@@ -17,7 +17,7 @@ where
 {
     let gl_xml = Document::parse(xml::GL_XML).expect("Unable to parse OpenGL XML spec.");
     let features = xml::loading::load_features(&gl_xml, api, extensions);
-    let registry = xml::parsing::parse_features(&gl_xml, &features);
+    let registry = xml::parsing::ParsedRegistry::from_feature_set(&gl_xml, &features);
     Ok(())
 }
 

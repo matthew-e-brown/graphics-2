@@ -24,7 +24,6 @@ fn parse_version(text: &str) -> Version {
 
 #[derive(Debug, Clone, Default)]
 pub struct FeatureSet<'a> {
-    pub types: HashSet<&'a str>,
     pub enums: HashSet<&'a str>,
     pub commands: HashSet<&'a str>,
 }
@@ -103,18 +102,22 @@ fn read_require<'a, 'input>(api_config: API, req_tag: Node<'a, 'input>, features
             continue;
         }
 
+        // What is the name of this requirement?
         let name = el.attribute("name").unwrap();
-        let el_type = match el.tag_name().name() {
-            "type" => &mut features.types,
+        // Which type of requirement is it?
+        let dest = match el.tag_name().name() {
             "enum" => &mut features.enums,
             "command" => &mut features.commands,
+            // ignore 'type' requirements, since we don't generate bindings for those (we instead replace those types
+            // with their required Rust types)
+            "type" => continue,
             other => panic!("unknown element in <require> or <remove>: {other:?}"),
         };
 
         if negate {
-            el_type.remove(&name);
+            dest.remove(&name);
         } else {
-            el_type.insert(&name);
+            dest.insert(&name);
         }
     }
 }
