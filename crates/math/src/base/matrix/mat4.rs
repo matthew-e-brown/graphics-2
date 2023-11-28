@@ -114,7 +114,7 @@ impl Matrix4D {
         let w = &self[[3, 3]];
 
         let s = a.cross(b);
-        let t = c.cross(b);
+        let t = c.cross(d);
         let u = (y * a) - (x * b);
         let v = (w * c) - (z * d);
 
@@ -140,10 +140,10 @@ impl Matrix4D {
         u *= inv_det;
         v *= inv_det;
 
-        let r0 = b.cross(&v) + t * y;
-        let r1 = v.cross(&a) - t * x;
-        let r2 = d.cross(&u) + s * w;
-        let r3 = u.cross(&c) - s * z;
+        let r0 = b.cross(&v) + (y * t);
+        let r1 = v.cross(&a) - (x * t);
+        let r2 = d.cross(&u) + (w * s);
+        let r3 = u.cross(&c) - (z * s);
 
         #[rustfmt::skip]
         return Matrix4D::new(
