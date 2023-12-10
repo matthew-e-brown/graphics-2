@@ -28,52 +28,53 @@ pub struct FeatureSet<'a> {
     pub commands: HashSet<&'a str>,
 }
 
+impl<'a> FeatureSet<'a> {
+    pub fn from_xml<'input, 'e, E: IntoIterator<Item = &'e str>>(
+        gl_xml: &'a XmlDocument<'input>,
+        api_config: API,
+        extensions: E,
+    ) -> Self {
+        let extensions = HashSet::<_>::from_iter(extensions.into_iter());
 
-pub fn load_features<'a, 'input, 'e, E: IntoIterator<Item = &'e str>>(
-    gl_xml: &'a XmlDocument<'input>,
-    api_config: API,
-    extensions: E,
-) -> FeatureSet<'a> {
-    let extensions = HashSet::<_>::from_iter(extensions.into_iter());
+        // There should always be a 'registry' tag as the first child
+        let registry = gl_xml.root().first_element_child().unwrap();
+        assert_eq!(registry.tag_name().name(), "registry");
 
-    // There should always be a 'registry' tag as the first child
-    let registry = gl_xml.root().first_element_child().unwrap();
-    assert_eq!(registry.tag_name().name(), "registry");
+        let filter_feature = |node: &Node| {
+            // <feature> tags should always have 'api' and 'number' attributes
+            let api = node.attribute("api").unwrap();
+            let ver = parse_version(node.attribute("number").unwrap());
+            api_config.check_name(api) && api_config.check_version(ver)
+        };
 
-    let filter_feature = |node: &Node| {
-        // <feature> tags should always have 'api' and 'number' attributes
-        let api = node.attribute("api").unwrap();
-        let ver = parse_version(node.attribute("number").unwrap());
-        api_config.check_name(api) && api_config.check_version(ver)
-    };
+        let filter_extension = |node: &Node| {
+            let name_attr = node.attribute("name").unwrap();
+            let support_attr = node.attribute("supported").unwrap();
+            let is_supported = support_attr.split('|').find(|api| api_config.check_name(api)).is_some();
+            match (extensions.contains(name_attr), is_supported) {
+                (false, _) => false,
+                (true, true) => true,
+                (true, false) => panic!("Requested extension is unsupported: {name_attr}"),
+            }
+        };
 
-    let filter_extension = |node: &Node| {
-        let name_attr = node.attribute("name").unwrap();
-        let support_attr = node.attribute("supported").unwrap();
-        let is_supported = support_attr.split('|').find(|api| api_config.check_name(api)).is_some();
-        match (extensions.contains(name_attr), is_supported) {
-            (false, _) => false,
-            (true, true) => true,
-            (true, false) => panic!("Requested extension is unsupported: {name_attr}"),
+        // First thing's first, we need to find all the `<feature>` and `<extension>` tags
+        let mut features = FeatureSet::default();
+        for el in registry.children().filter(|node| node.is_element()) {
+            match el.tag_name().name() {
+                // Feature tags are one each
+                "feature" if filter_feature(&el) => read_feature(api_config, el, &mut features),
+                // But the extensions are all within an `extensions` tag
+                "extensions" => el
+                    .children()
+                    .filter(|node| node.is_element() && filter_extension(node))
+                    .for_each(|ext| read_feature(api_config, ext, &mut features)),
+                _ => continue,
+            }
         }
-    };
 
-    // First thing's first, we need to find all the `<feature>` and `<extension>` tags
-    let mut features = FeatureSet::default();
-    for el in registry.children().filter(|node| node.is_element()) {
-        match el.tag_name().name() {
-            // Feature tags are one each
-            "feature" if filter_feature(&el) => read_feature(api_config, el, &mut features),
-            // But the extensions are all within an `extensions` tag
-            "extensions" => el
-                .children()
-                .filter(|node| node.is_element() && filter_extension(node))
-                .for_each(|ext| read_feature(api_config, ext, &mut features)),
-            _ => continue,
-        }
+        features
     }
-
-    features
 }
 
 

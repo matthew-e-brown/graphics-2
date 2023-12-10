@@ -21,7 +21,7 @@ fn to_case(text: &str, case: Case) -> Cow<'_, str> {
 
 /// A set of Rust types, functions, aliases, and so on that are ready to be output to a file.
 #[derive(Debug, Clone, Default)]
-pub struct ParsedRegistry<'input> {
+pub struct Registry<'input> {
     /// Rust function bindings.
     pub functions: Vec<FunctionBinding<'input>>,
     /// Rust 'newtypes'; structs that directly wrap a primitive value. Derived from the `class` attribute on function
@@ -34,7 +34,7 @@ pub struct ParsedRegistry<'input> {
 }
 
 
-impl<'input> ParsedRegistry<'input> {
+impl<'input> Registry<'input> {
     pub fn from_feature_set(gl_xml: &XmlDocument<'input>, feature_set: &FeatureSet) -> Self {
         // There should always be a 'registry' tag as the first child
         let registry_node = gl_xml.root().first_element_child().unwrap();
@@ -61,11 +61,13 @@ impl<'input> ParsedRegistry<'input> {
 
                     // Bitmask enums are going to have their variants as associated constants, and so need to get
                     // UPPER_SNAKE_CASE. Regular enums will become regular enum variants, and so we want them in
-                    // PascalCase.
-                    let variant_case = is_bitmask.then_some(Case::UpperSnake).unwrap_or(Case::Pascal);
-
-                    // Obviously, if we are in a group of bitmasks then we want to add
-                    let enum_map = is_bitmask.then_some(&mut registry.bitmasks).unwrap_or(&mut registry.enums);
+                    // PascalCase. Obviously, if we are in a group of bitmasks then we want to add to the `bitmasks`
+                    // group; otherwise, we add to the regular enums group.
+                    let (variant_case, enum_map) = if is_bitmask {
+                        (Case::UpperSnake, &mut registry.bitmasks)
+                    } else {
+                        (Case::Pascal, &mut registry.enums)
+                    };
 
                     for enum_node in el.children().filter(|node| node.is_element()) {
                         match enum_node.tag_name().name() {
