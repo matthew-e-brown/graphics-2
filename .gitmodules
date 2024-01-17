@@ -1,4 +1,0 @@
-[submodule "crates/bindgen/registry/opengl"]
-	path = crates/bindgen/registry/opengl
-	url = git@github.com:matthew-e-brown/OpenGL-Registry.git
-	branch = enums
