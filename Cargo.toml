@@ -6,16 +6,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Local crates
-gloog = { version = "0.1.0", path = "crates/gloog" }
-# 3rd party deps
-bytemuck = "1.13.1"
+bytemuck = { version = "1.13.1", features = ["derive"] }
 glfw = "0.52.0"
-
 
 [workspace]
 members = [
+    "crates/bindgen",
     "crates/core",
-    "crates/math",
     "crates/gloog",
 ]
