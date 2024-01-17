@@ -7,8 +7,9 @@ edition = "2021"
 
 [dependencies]
 gloog-math = { version = "0.1.0", path = "crates/math" }
+gl = { version = "0.1.0", path = "crates/gl" }
 bytemuck = "1.13.1"
 glfw = "0.52.0"
 
 [workspace]
-members = ["crates/math"]
+members = ["crates/math", "crates/gl"]
