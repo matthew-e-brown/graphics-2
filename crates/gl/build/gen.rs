@@ -1,7 +1,9 @@
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 
-use gl_generator::{Generator, Registry};
+use convert_case::{Case, Casing};
+use gl_generator::{Enum, Generator, Registry};
 use indoc::indoc;
 
 
@@ -9,11 +11,17 @@ pub struct StructGenerator;
 
 impl Generator for StructGenerator {
     fn write<W: Write>(&self, registry: &Registry, dest: &mut W) -> io::Result<()> {
+        // Start by splitting up the enums into the different sets we want.
+        let [enums, bitfields, special_enums] = separate_enums(registry);
+
         // `types` module:
         writeln!(dest, "pub mod types {{")?;
         write_type_aliases(dest)?;
-        write_custom_types(registry, dest)?;
-        writeln!(dest, "}}")?;
+        write_custom_types(&enums, dest)?;
+        writeln!(dest, "}}\n")?;
+
+        writeln!(dest, "use self::types::{{GLEnum, GLBitfield}};\n")?;
+        write_enum_values(&[enums, bitfields, special_enums], dest)?;
 
         Ok(())
     }
@@ -68,9 +76,66 @@ fn get_typename(gl_type: &str) -> &'static str {
 }
 
 
+fn convert_ident(ident: &str, from_case: Case, to_case: Case) -> Cow<'_, str> {
+    if ident.is_case(to_case) {
+        Cow::Borrowed(ident)
+    } else {
+        Cow::Owned(ident.from_case(from_case).to_case(to_case))
+    }
+}
+
+
+fn parse_enum_value(val: &str) -> u32 {
+    let trim = val.trim_start_matches("0x");
+    u32::from_str_radix(trim, 16).unwrap_or_else(|_| panic!("GLenum value '{val}' should be valid u32 in hex"))
+}
+
+
+/// Separates all of the OpenGL enums into separate groups:
+/// - Regular `GLenum` values,
+/// - Enums tagged as `bitfield`,
+/// - Enums with non-`GLenum` types.
+/// In that order.
+fn separate_enums(registry: &Registry) -> [BTreeSet<&Enum>; 3] {
+    let mut group_regular = BTreeSet::new();
+    let mut group_bitfields = BTreeSet::new();
+
+    // Split regular and bitmask enums up
+    for group in registry.groups.values() {
+        for member in &group.enums {
+            if let Some("bitmask") = group.enums_type.as_deref() {
+                group_bitfields.insert(&member[..]);
+            } else {
+                group_regular.insert(&member[..]);
+            }
+        }
+    }
+
+    let mut regular_enums = BTreeSet::new();
+    let mut bitfield_enums = BTreeSet::new();
+    let mut special_enums = BTreeSet::new();
+
+    // Filter for just the ones that're `GLenum`
+    for e in &registry.enums {
+        if e.ty == "GLenum" {
+            if group_regular.contains(&e.ident[..]) {
+                regular_enums.insert(e);
+            }
+
+            if group_bitfields.contains(&e.ident[..]) {
+                bitfield_enums.insert(e);
+            }
+        } else {
+            special_enums.insert(e);
+        }
+    }
+
+    [regular_enums, bitfield_enums, special_enums]
+}
+
+
 fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
-    #[rustfmt::skip]
-    return dest.write_all(indoc! {r#"
+    dest.write_all(indoc! {r#"
         // Function pointers, used for callbacks.
         pub type GLDebugProc = Option<extern "system" fn(
             source: GLEnum,
@@ -104,11 +169,12 @@ fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
             user_param: *mut core::ffi::c_void,
         )>;
 
-    "#}.as_bytes());
+    "#}.as_bytes())?;
+    writeln!(dest)
 }
 
 
-fn write_custom_types(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
+fn write_custom_types(enums: &BTreeSet<&Enum>, dest: &mut impl Write) -> io::Result<()> {
     // FIXME: Bring back full implementations for GLEnum and GLBitfields once groups are fully supported.
     // https://github.com/matthew-e-brown/graphics-2/blob/98b6f4e7574e2d7ac62eb9190ccecb667ac8def4/crates/core/src/types/macros.rs
 
@@ -139,7 +205,7 @@ fn write_custom_types(registry: &Registry, dest: &mut impl Write) -> io::Result<
 
         #[repr(transparent)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-        pub struct GLBitfield(u32);
+        pub struct GLBitfield(pub(super) u32);
 
         // GLBitfields get bitwise operations defined on them.
 
@@ -186,27 +252,20 @@ fn write_custom_types(registry: &Registry, dest: &mut impl Write) -> io::Result<
         impl core::ops::BitOrAssign<&GLBitfield> for GLBitfield { fn bitor_assign(&mut self, rhs: &GLBitfield) { self.0 |= rhs.0 } }
         impl core::ops::BitAndAssign<&GLBitfield> for GLBitfield { fn bitand_assign(&mut self, rhs: &GLBitfield) { self.0 &= rhs.0 } }
         impl core::ops::BitXorAssign<&GLBitfield> for GLBitfield { fn bitxor_assign(&mut self, rhs: &GLBitfield) { self.0 ^= rhs.0 } }
-
     "#}.as_bytes())?;
+    writeln!(dest)?;
 
     // Debug implementation for GLEnum:
     // --------------------------------
 
-    // Check for which enums share values, then collect into vec so we can sort ascending
-    let mut enum_val_map = registry
-        .enums
-        .iter()
-        .filter(|e| e.ty == "GLenum")
-        .fold(HashMap::new(), |mut map, e| {
-            let val = u64::from_str_radix(e.value.trim_start_matches("0x"), 16)
-                .expect("GLEnum value should be valid hex number");
-            let vec = map.entry(val).or_insert_with(|| Vec::new());
-            vec.push("GL_".to_owned() + &e.ident);
-            map
-        })
-        .into_iter()
-        .collect::<Vec<_>>();
-    enum_val_map.sort_unstable_by_key(|&(v, _)| v);
+    // Get a list of all enums, but indexed val => enum directly instead of enum => data.
+    let enums_by_val = enums.iter().fold(BTreeMap::new(), |mut map, e| {
+        let key = parse_enum_value(&e.value);
+        let val = String::from("GL_") + &convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let vec = map.entry(key).or_insert_with(|| Vec::new());
+        vec.push(val);
+        map
+    });
 
     // Write header
     #[rustfmt::skip]
@@ -220,16 +279,13 @@ fn write_custom_types(registry: &Registry, dest: &mut impl Write) -> io::Result<
     "#}.as_bytes())?;
 
     // Print enum variants
-    for (val, idents) in enum_val_map {
+    for (val, idents) in enums_by_val {
         assert!(idents.len() > 0);
 
-        dest.write_all("            ".as_bytes())?; // indentation]
-        if idents.len() == 1 {
-            // Writes: `0x80CA => "GL_BLEND_DST_ALPHA".into(),\n`
-            dest.write_fmt(format_args!("0x{val:04X} => \"{}\".into(),\n", idents[0]))?;
-        } else {
-            // Writes: `0x0020 => "OneOf(GL_COMPUTE_SHADER_BIT, ..., GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)".into`
-            dest.write_fmt(format_args!("0x{val:04X} => \"OneOf({})\".into(),\n", idents.join(", ")))?;
+        dest.write_all("            ".as_bytes())?; // indentation
+        match idents.len() {
+            1 => dest.write_fmt(format_args!("0x{val:04X} => \"{}\".into(),\n", idents[0]))?,
+            _ => dest.write_fmt(format_args!("0x{val:04X} => \"OneOf({})\".into(),\n", idents.join(", ")))?,
         }
     }
 
@@ -243,6 +299,39 @@ fn write_custom_types(registry: &Registry, dest: &mut impl Write) -> io::Result<
             }
         }
     "#}.as_bytes())?;
+
+    Ok(())
+}
+
+
+fn write_enum_values(enum_sets: &[BTreeSet<&Enum>; 3], dest: &mut impl Write) -> io::Result<()> {
+    let [enums, bitfields, special_enums] = enum_sets;
+
+    // Write enums
+    for &e in enums {
+        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let value = &e.value;
+        dest.write_fmt(format_args!("pub const {ident}: GLEnum = GLEnum({value});\n"))?;
+    }
+
+    writeln!(dest)?;
+
+    // Write bitmasks
+    for &e in bitfields {
+        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let value = &e.value;
+        dest.write_fmt(format_args!("pub const {ident}: GLBitfield = GLBitfield({value});\n"))?;
+    }
+
+    writeln!(dest)?;
+
+    // Write special values (except the booleans, we don't need those)
+    for &e in special_enums.iter().filter(|e| e.ty != "GLboolean") {
+        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let value = &e.value;
+        let ty = get_typename(&e.ty);
+        dest.write_fmt(format_args!("pub const {ident}: {ty} = {value};\n"))?;
+    }
 
     Ok(())
 }
