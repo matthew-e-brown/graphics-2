@@ -1,4 +1,5 @@
-mod gen;
+mod generator;
+mod rename;
 
 use std::env;
 use std::fs::File;
@@ -18,7 +19,7 @@ pub fn main() {
     let dest = Path::new(&dest).join("bindings.rs");
     let mut file = File::create(dest).expect("failed to create bindings.rs in OUT_DIR");
 
-    registry.write_bindings(gen::StructGenerator, &mut file)
+    registry.write_bindings(generator::StructGenerator, &mut file)
         .expect("failed to write bindings to buffer");
 }
 
