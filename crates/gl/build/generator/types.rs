@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 
-use convert_case::Case;
 use gl_generator::{Enum, Registry};
 use indoc::indoc;
 
-use crate::rename::{convert_ident, gl_type_to_rs};
+use crate::rename::{rename_enum_variant, rename_xml_type};
 
 
 fn parse_value(val: &str) -> u32 {
@@ -70,6 +69,8 @@ impl<'a> SortedEnums<'a> {
 pub fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
     #[rustfmt::skip]
     dest.write_all(indoc! {r#"
+        use core::ffi::c_void;
+
         // Function pointers, used for callbacks.
         // -----------------------------------------------------------------------------
 
@@ -80,7 +81,7 @@ pub fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
             severity: GLEnum,
             length: i32,
             message: *const i8,
-            user_param: *mut core::ffi::c_void,
+            user_param: *mut c_void,
         )>;
 
         // Opaque types, pointed to by some function parameters.
@@ -105,7 +106,7 @@ pub fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
             severity: GLEnum,
             length: i32,
             message: *const i8,
-            user_param: *mut core::ffi::c_void,
+            user_param: *mut c_void,
         )>;
     "#}.as_bytes())?;
     writeln!(dest)
@@ -165,13 +166,10 @@ pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Re
             }
         }
 
-        // !
         impl core::ops::Not for GLBitfield { type Output = Self; fn not(self) -> Self::Output { GLBitfield(!self.0) } }
-
         impl core::ops::Not for &'_ GLBitfield { type Output = GLBitfield; fn not(self) -> Self::Output { GLBitfield(!self.0) } }
         impl core::ops::Not for &'_ mut GLBitfield { type Output = GLBitfield; fn not(self) -> Self::Output { GLBitfield(!self.0) } }
 
-        // |, &, ^
         impl core::ops::BitOr for GLBitfield { type Output = Self; fn bitor(self, rhs: Self) -> Self::Output { GLBitfield(self.0 | rhs.0) } }
         impl core::ops::BitAnd for GLBitfield { type Output = Self; fn bitand(self, rhs: Self) -> Self::Output { GLBitfield(self.0 & rhs.0) } }
         impl core::ops::BitXor for GLBitfield { type Output = Self; fn bitxor(self, rhs: Self) -> Self::Output { GLBitfield(self.0 ^ rhs.0) } }
@@ -185,7 +183,6 @@ pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Re
         impl<'l, 'r> core::ops::BitAnd<&'r GLBitfield> for &'l GLBitfield { type Output = GLBitfield; fn bitand(self, rhs: &'r GLBitfield) -> Self::Output { GLBitfield(self.0 & rhs.0) } }
         impl<'l, 'r> core::ops::BitXor<&'r GLBitfield> for &'l GLBitfield { type Output = GLBitfield; fn bitxor(self, rhs: &'r GLBitfield) -> Self::Output { GLBitfield(self.0 ^ rhs.0) } }
 
-        // |=, &=, ^=
         impl core::ops::BitOrAssign<GLBitfield> for GLBitfield { fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0 } }
         impl core::ops::BitAndAssign<GLBitfield> for GLBitfield { fn bitand_assign(&mut self, rhs: Self) { self.0 &= rhs.0 } }
         impl core::ops::BitXorAssign<GLBitfield> for GLBitfield { fn bitxor_assign(&mut self, rhs: Self) { self.0 ^= rhs.0 } }
@@ -201,7 +198,7 @@ pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Re
     // Get a list of all enums, but indexed val => enum directly instead of enum => data.
     let enums_by_val = enums.iter().fold(BTreeMap::new(), |mut map, e| {
         let key = parse_value(&e.value);
-        let val = String::from("GL_") + &convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let val = String::from("GL_") + &e.ident;
         let vec = map.entry(key).or_insert_with(|| Vec::new());
         vec.push(val);
         map
@@ -245,29 +242,42 @@ pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Re
 
 
 pub fn write_enum_values(enums: &SortedEnums, dest: &mut impl Write) -> io::Result<()> {
-    // Write enums
-    for e in &enums.standard {
-        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
-        let value = &e.value;
-        dest.write_fmt(format_args!("pub const {ident}: GLEnum = GLEnum({value});\n"))?;
+    let enum_sets = &[
+        ("GLEnum", &enums.standard),
+        ("GLBitfield", &enums.bitfield),
+    ];
+
+    for &(typename, enums) in enum_sets {
+        for e in enums {
+            let ident = rename_enum_variant(&e.ident);
+            let value = &e.value;
+
+            // FIXME: This is (sorta) temporary. Right now, `rename_enum_variant` does nothing; no point going from
+            // `UPPER_SNAKE` to `UPPER_SNAKE`. Once enums are removed from being global constants and instead turned
+            // into actual enums, that function will start converting cases properly.
+            //
+            // The issue at hand applies regardless of what `rename_enum_variant` is doing, though. The reason we need
+            // this is because there are some names we want to keep in not-quite upper snake case. For example,
+            // `FLOAT_MAT2x3`. These are the only ones that need a linter toggle, so we only do it sometimes.
+            //
+            // So, in the future, when we eventually do have proper enums, we'll still need this. It just won't
+            // necessarily be the same check and same linter toggle. That is, unless we manage to find a way to
+            // auto-rename all enum variants in such a way that they're perfectly Rust-compatible.
+            if ident.chars().any(|c| c.is_lowercase()) {
+                write!(dest, "#[allow(non_upper_case_globals)] ")?;
+            }
+
+            write!(dest, "pub const {ident}: {typename} = {typename}({value});\n")?;
+        }
+
+        writeln!(dest)?;
     }
-
-    writeln!(dest)?;
-
-    // Write bitmasks
-    for e in &enums.bitfield {
-        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
-        let value = &e.value;
-        dest.write_fmt(format_args!("pub const {ident}: GLBitfield = GLBitfield({value});\n"))?;
-    }
-
-    writeln!(dest)?;
 
     // Write special values (except the booleans, we don't need those)
     for e in enums.other.iter().filter(|e| e.ty != "GLboolean") {
-        let ident = convert_ident(&e.ident, Case::Snake, Case::UpperSnake);
+        let ident = rename_enum_variant(&e.ident);
         let value = &e.value;
-        let ty = gl_type_to_rs(&e.ty).unwrap_or_else(|| panic!("enum type {} should map to Rust type", e.ty));
+        let ty = rename_xml_type(&e.ty).unwrap_or_else(|| panic!("enum type {} should map to Rust type", e.ty));
         dest.write_fmt(format_args!("pub const {ident}: {ty} = {value};\n"))?;
     }
 

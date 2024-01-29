@@ -21,8 +21,10 @@ impl Generator for StructGenerator {
         write_wrapper_types(&enums, dest)?;
         writeln!(dest, "}}\n")?;
 
-        writeln!(dest, "#[allow(unused_imports)]")?;
-        writeln!(dest, "use self::types::{{GLEnum, GLBitfield}};\n")?;
+        writeln!(dest, "#[allow(unused_imports)] use self::types::{{GLEnum, GLBitfield}};")?;
+        writeln!(dest, "#[allow(unused_imports)] use core::ffi::c_void;")?;
+        writeln!(dest)?;
+
         write_enum_values(&enums, dest)?;
         writeln!(dest)?;
 

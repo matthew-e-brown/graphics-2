@@ -1,28 +1,59 @@
 use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 use convert_case::{Case, Casing};
+use lazy_static::lazy_static;
+use regex::Regex;
 
 
-/// Converts an identity from one casing to another.
-pub fn convert_ident(ident: &str, from_case: Case, to_case: Case) -> Cow<'_, str> {
-    if ident.is_case(to_case) {
-        Cow::Borrowed(ident)
+// Cuz I'm too lazy to type `&'static str` every time lol
+type Str = &'static str;
+
+
+/// Trims the given pattern off of the start of the given slice, shrinking it down in the process.
+///
+/// Returns the matched pattern for convenience. Helpful when chaining calls to [`Option::or_else`].
+fn trim_start_mut<'a, 'p>(str: &mut &'a str, pat: &'p str) -> Option<&'p str> {
+    if str.starts_with(pat) {
+        *str = &str[pat.len()..];
+        Some(pat)
     } else {
-        Cow::Owned(ident.from_case(from_case).to_case(to_case))
+        None
+    }
+}
+
+/// Trims the given pattern off of the end of the given slice, shrinking it down in the process.
+///
+/// Returns the matched pattern for convenience. Helpful when chaining calls to [`Option::or_else`].
+fn trim_end_mut<'a, 'p>(str: &mut &'a str, pat: &'p str) -> Option<&'p str> {
+    if str.ends_with(pat) {
+        *str = &str[..str.len() - pat.len()];
+        Some(pat)
+    } else {
+        None
     }
 }
 
 
-/// Converts a typename from how it appears in the raw OpenGL spec into one applicable for usage by this crate.
-pub fn gl_type_to_rs(gl_typename: &str) -> Option<&'static str> {
+/// Converts an enum variant from `UPPER_SNAKE_CASE` into one that this crate can use.
+pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
+    // FIXME: Once groups are sorted out, this'll need to convert to UpperCamelCase instead.
+    Cow::Borrowed(ident)
+}
+
+
+/// Converts a typename from how it appears in the raw OpenGL spec into one for usage by this crate.
+///
+/// Returns [`None`] if the given typename does not (yet) map to anything supported by this crate.
+pub fn rename_xml_type(typename: &str) -> Option<&'static str> {
     // cspell:disable
     #[rustfmt::skip]
-    return match gl_typename {
+    return match typename {
         // Common types from OpenGL 1.1
         "GLenum"            => Some("GLEnum"),                      // super::__gl_imports::raw::c_uint;
         "GLboolean"         => Some("bool"),                        // super::__gl_imports::raw::c_uchar;
         "GLbitfield"        => Some("GLBitfield"),                  // super::__gl_imports::raw::c_uint;
-        "GLvoid"            => Some("core::ffi::c_void"),           // super::__gl_imports::raw::c_void;
+        "GLvoid"            => Some("c_void"),                      // super::__gl_imports::raw::c_void;
         "GLbyte"            => Some("i8"),                          // super::__gl_imports::raw::c_char;
         "GLshort"           => Some("i16"),                         // super::__gl_imports::raw::c_short;
         "GLint"             => Some("i32"),                         // super::__gl_imports::raw::c_int;
@@ -35,12 +66,12 @@ pub fn gl_type_to_rs(gl_typename: &str) -> Option<&'static str> {
         "GLclampf"          => Some("f32"),                         // super::__gl_imports::raw::c_float;
         "GLdouble"          => Some("f64"),                         // super::__gl_imports::raw::c_double;
         "GLclampd"          => Some("f64"),                         // super::__gl_imports::raw::c_double;
-        "GLeglImageOES"     => Some("*const core::ffi::c_void"),    // *const super::__gl_imports::raw::c_void;
+        "GLeglImageOES"     => Some("*const c_void"),               // *const super::__gl_imports::raw::c_void;
         "GLchar"            => Some("i8"),                          // super::__gl_imports::raw::c_char;
         "GLcharARB"         => Some("i8"),                          // super::__gl_imports::raw::c_char;
         // -----------------------------------------------------------------------------------------
-        #[cfg(target_os = "macos")]      "GLhandleARB" => Some("*const core::ffi::c_void"), // *const super::__gl_imports::raw::c_void;
-        #[cfg(not(target_os = "macos"))] "GLhandleARB" => Some("u32"),                      // super::__gl_imports::raw::c_uint;
+        #[cfg(target_os = "macos")]      "GLhandleARB" => Some("*const c_void"),    // *const super::__gl_imports::raw::c_void;
+        #[cfg(not(target_os = "macos"))] "GLhandleARB" => Some("u32"),              // super::__gl_imports::raw::c_uint;
         "GLhalfARB"         => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
         "GLhalf"            => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
         "GLfixed"           => Some("i32"),                         // GLint; (Must be 32 bits)
@@ -68,25 +99,15 @@ pub fn gl_type_to_rs(gl_typename: &str) -> Option<&'static str> {
 
 
 /// Converts a typename from how it appears after being parsed by [`gl_generator`] into one for usage by this crate.
-pub fn lib_type_to_rs(lib_typename: &str) -> Cow<'_, str> {
-    if lib_typename == "()" {
-        return lib_typename.into();
+///
+/// Returns [`None`] if the given typename does not (yet) map to anything supported by this crate.
+pub fn rename_lib_type(typename: &str) -> Option<Cow<'_, str>> {
+    if typename == "()" {
+        return Some(typename.into());
     }
 
     let mut res = String::new();
-    let mut str = lib_typename;
-
-    /// Trims the given pattern off the start of the given slice, shrinking it down in the process.
-    ///
-    /// Returns the matched pattern for convenience.
-    fn trim_start_mut<'a, 'p>(str: &mut &'a str, pat: &'p str) -> Option<&'p str> {
-        if str.starts_with(pat) {
-            *str = &str[pat.len()..];
-            Some(pat)
-        } else {
-            None
-        }
-    }
+    let mut str = typename;
 
     // Trim off any pointer types and add to our own string
     loop {
@@ -102,17 +123,159 @@ pub fn lib_type_to_rs(lib_typename: &str) -> Cow<'_, str> {
 
     // Map aliases to our types
     if let Some(_) = trim_start_mut(&mut str, "types::") {
-        let our_ty = gl_type_to_rs(str).unwrap_or_else(|| panic!("unknown typename: {lib_typename}"));
+        let our_ty = rename_xml_type(str)?;
         res.push_str(our_ty);
     } else if let Some(_) = trim_start_mut(&mut str, "__gl_imports::") {
         if let Some(_) = trim_start_mut(&mut str, "raw::c_void") {
-            res.push_str("core::ffi::c_void");
+            res.push_str("c_void");
         } else {
-            unimplemented!("unknown typename: {lib_typename}");
+            return None;
         }
     } else {
-        unimplemented!("unknown typename: {lib_typename}");
+        return None;
     }
 
-    res.into()
+    Some(Cow::Owned(res))
+}
+
+
+/// Converts a function identifier to snake case, taking care to handle OpenGL-specific function endings (e.g., `1fv`).
+pub fn rename_function(ident: &str) -> Cow<'_, str> {
+    #[rustfmt::skip]
+    lazy_static! {
+        // cspell:disable-next-line
+        static ref SUFFIXES: Regex = Regex::new(r"(?:[1234]|[234]x[234]|64)?(?:b|s|i_?|i64_?|f|d|ub|us|ui|ui64|x)?v?$").unwrap();
+
+        /// Valid words at the end of functions.
+        ///
+        /// These are things that may trip a false positive when searching for function suffixes. For example, the `d`
+        /// on the end of `Enabled` matches the suffix regex, but we don't want to split that `d` off of `Enable`.
+        static ref NON_SUFFIXES: BTreeSet<Str> = BTreeSet::from_iter([
+            // cspell:disable
+            "Arrays", "Attrib", "Box", "Buffers", "Elements", "Enabled", "End", "Feedbacks", "Fixed", "Framebuffers",
+            "Index", "Indexed", "Indices", "Lists", "Minmax", "Matrix", "Names", "Pipelines", "Pixels", "Queries",
+            "Rects", "Renderbuffers", "Samplers", "Shaders", "Stages", "Status", "Textures", "Varyings", "Vertex",
+            "1D", "2D", "3D",
+            // cspell:enable
+        ]);
+    }
+
+    /// Things that we want to trim off the end of our string before we consider the suffixes. Mostly just the list
+    /// of vendors.
+    #[rustfmt::skip]
+    const KEEP_AFTER_SUFFIX: &[Str] = &[
+        // cspell:disable
+        "EXT", "ARB", "NV", "NVX", "ATI", "3DLABS", "SUN", "SGI", "SGIX", "SGIS", "INTEL", "3DFX", "IBM", "MESA",
+        "GREMEDY", "OML", "OES", "PGI", "I3D", "INGR", "MTX"
+        // cspell:enable
+    ];
+
+    /// Things that we want to force apart that `convert_case` won't catch. This step happens *after* the case
+    /// conversion, so they need to be specified in `lower_snake_case`.
+    #[rustfmt::skip]
+    const FINAL_REPLACEMENTS: &[(Str, Str)] = &[
+        // cspell:disable
+        ("getn", "get_n"),
+        // cspell:enable
+    ];
+
+    // -----------------------------------------------------------------------------------------------------------------
+
+    let mut vendor = None; // A vendor suffix, if any.
+    let mut suffix = None; // One of those OpenGL specifier suffix thingies.
+    let mut name = ident; // Name of the function itself. Gets trimmed down as the other two are found.
+
+    // When we get a function name, first check if it ends with any of the given vendor names. If it does, trim the part
+    // we care about to that section of the string. Keep track of the function's ending so we can re-add it later.
+    for &ending in KEEP_AFTER_SUFFIX.iter() {
+        if let Some(_) = trim_end_mut(&mut name, ending) {
+            name = name.trim_end_matches("_"); // just in case there's a `_ARB` or something.
+            vendor = Some(ending);
+            break;
+        }
+    }
+
+    // Next, check if the function ends with one of our suffixes. A regex made entirely of optional components will
+    // always match, so we can safely unwrap.
+    let caps = SUFFIXES.captures(name).unwrap();
+    let suffix_match = &caps[0];
+    if suffix_match.len() > 0 {
+        // If we do have a match, look backwards into the string to see if the thing this suffix was attached to is a
+        // predetermined non-suffix. This is the reason we do this step before converting case: now, we can reliably
+        // iterate backwards until we hit an uppercase letter.
+        let upper_idx = name.chars().rev().take_while(|c| !c.is_ascii_uppercase()).count() + 1;
+        let last_word = &name[name.len() - upper_idx..];
+
+        // Check to see if the suffix we found was a part of an actual word. If it wasn't, we have a proper suffix that
+        // we need to trim off and replace after an underscore. If it was, we leave it be.
+        if !NON_SUFFIXES.contains(last_word) {
+            println!("{name} matched {suffix_match} --> {}", &name[..name.len() - suffix_match.len()]);
+            suffix = Some(suffix_match);
+            name = &name[..name.len() - suffix_match.len()];
+        }
+    }
+
+    // Zip everything together, converting the name to `lower_snake_case`.
+    let mut name = name.from_case(Case::UpperCamel).to_case(Case::Snake);
+    if let Some(suffix) = suffix {
+        name.push('_');
+        name.push_str(suffix);
+    }
+    if let Some(vendor) = vendor {
+        name.push('_');
+        name.push_str(vendor);
+    }
+
+    // Finally, look for any extra replacements manual replacements we want to make and do them. No need to be too fancy
+    // here, just replace them manually.
+    for &(replace, with) in FINAL_REPLACEMENTS {
+        name = name.replace(replace, with);
+    }
+
+    Cow::Owned(name)
+}
+
+
+pub fn rename_parameter(ident: &str) -> Cow<'_, str> {
+    lazy_static! {
+        static ref MANUAL_MAPPINGS: BTreeMap<Str, Str> = BTreeMap::from_iter([
+            // I prefer 'ty' over 'type_', personally :)
+            ("type_", "ty"),
+            // If we're trying to avoid collisions with the 'ref' keyword, I think this is a fair thing to name it to:
+            // "ref" = "reference value" in both of the only two functions that use it in 4.6 (StencilFunc et al).
+            ("ref_", "ref_val"),
+            // ------------------
+            // cspell:disable
+            ("internalformat", "internal_format"),
+            ("instancecount", "instance_count"),
+            ("baseinstance", "base_instance"),
+            ("basevertex", "base_vertex"),
+            ("textarget", "tex_target"),
+            ("shadertype", "shader_type"),
+            ("precisiontype", "precision_type"),
+            ("drawcount", "draw_count"),
+            ("maxdrawcount", "max_draw_count"),
+            ("xoffset", "x_offset"),
+            ("yoffset", "y_offset"),
+            ("zoffset", "z_offset"),
+            ("fixedsamplelocations", "fixed_sample_locations"),
+            ("sfail", "s_fail"),
+            ("dpfail", "dp_fail"),
+            ("dppass", "dp_pass"),
+            ("zfail", "z_fail"),
+            ("zpass", "z_pass"),
+            ("attribindex", "attrib_index"),
+            ("relativeoffset", "relative_offset"),
+            ("bindingindex", "binding_index"),
+            // cspell:enable
+        ]);
+    }
+
+    if let Some(&preferred) = MANUAL_MAPPINGS.get(ident) {
+        Cow::Borrowed(preferred)
+    } else if ident.is_case(Case::Snake) {
+        Cow::Borrowed(ident)
+    } else {
+        Cow::Owned(ident.to_case(Case::Snake))
+    }
 }

@@ -1,10 +1,9 @@
 use std::io::{self, Write};
 
-use convert_case::Case;
 use gl_generator::Registry;
 use indoc::indoc;
 
-use crate::rename::{convert_ident, lib_type_to_rs};
+use crate::rename::{rename_function, rename_lib_type, rename_parameter};
 
 
 fn make_fn_ptr<'a, S: AsRef<str>>(params: impl IntoIterator<Item = (S, S)>, ret_ty: &str) -> String {
@@ -34,18 +33,18 @@ pub fn write_gl_struct(registry: &Registry, dest: &mut impl Write) -> io::Result
     dest.write_all(indoc! {r#"
         /// An abstraction over an OpenGL context.
         ///
-        /// This struct _not really_ an "OpenGL context;" really, it is a collection of loaded function pointers for use
+        /// This struct _isn't really_ an "OpenGL context;" really, it is a collection of loaded function pointers for use
         /// in the current thread.
+        #[allow(dead_code)]         // temp
         pub struct GLContext {
     "#}.as_bytes())?;
 
-    // println!("{:#?}", registry.cmds);
     for cmd in &registry.cmds {
-        let ident = convert_ident(&cmd.proto.ident, Case::Camel, Case::Snake);
-        let ret_ty = lib_type_to_rs(&cmd.proto.ty);
+        let ident = rename_function(&cmd.proto.ident);
+        let ret_ty = rename_lib_type(&cmd.proto.ty).unwrap_or_else(|| panic!("unknown typename: {}", cmd.proto.ty));
         let params = cmd.params.iter().map(|param| {
-            let ident = convert_ident(&param.ident, Case::UpperCamel, Case::Snake);
-            let ty = lib_type_to_rs(&param.ty);
+            let ident = rename_parameter(&param.ident);
+            let ty = rename_lib_type(&param.ty).unwrap_or_else(|| panic!("unknown typename: {}", param.ty));
             (ident, ty)
         });
 
