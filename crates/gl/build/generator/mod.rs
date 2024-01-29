@@ -5,7 +5,7 @@ use std::io::{self, Write};
 
 use gl_generator::{Generator, Registry};
 
-use self::commands::write_gl_struct;
+use self::commands::{write_gl_struct, write_gl_struct_ctor, write_gl_struct_impl};
 use self::types::{write_enum_values, write_type_aliases, write_wrapper_types, SortedEnums};
 
 
@@ -19,7 +19,8 @@ impl Generator for StructGenerator {
         writeln!(dest, "pub mod types {{")?;
         write_type_aliases(dest)?;
         write_wrapper_types(&enums, dest)?;
-        writeln!(dest, "}}\n")?;
+        writeln!(dest, "}}")?;
+        writeln!(dest)?;
 
         writeln!(dest, "#[allow(unused_imports)] use self::types::{{GLEnum, GLBitfield}};")?;
         writeln!(dest, "#[allow(unused_imports)] use core::ffi::c_void;")?;
@@ -29,6 +30,12 @@ impl Generator for StructGenerator {
         writeln!(dest)?;
 
         write_gl_struct(registry, dest)?;
+        writeln!(dest)?;
+
+        write_gl_struct_ctor(registry, dest)?;
+        writeln!(dest)?;
+
+        write_gl_struct_impl(registry, dest)?;
 
         Ok(())
     }

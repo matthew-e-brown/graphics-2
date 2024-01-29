@@ -277,7 +277,7 @@ pub fn write_enum_values(enums: &SortedEnums, dest: &mut impl Write) -> io::Resu
     for e in enums.other.iter().filter(|e| e.ty != "GLboolean") {
         let ident = rename_enum_variant(&e.ident);
         let value = &e.value;
-        let ty = rename_xml_type(&e.ty).unwrap_or_else(|| panic!("enum type {} should map to Rust type", e.ty));
+        let ty = rename_xml_type(&e.ty);
         dest.write_fmt(format_args!("pub const {ident}: {ty} = {value};\n"))?;
     }
 

@@ -44,55 +44,55 @@ pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
 
 /// Converts a typename from how it appears in the raw OpenGL spec into one for usage by this crate.
 ///
-/// Returns [`None`] if the given typename does not (yet) map to anything supported by this crate.
-pub fn rename_xml_type(typename: &str) -> Option<&'static str> {
+/// Panics if the given typename does not (yet) map to anything supported by this crate.
+pub fn rename_xml_type(typename: &str) -> &'static str {
     // cspell:disable
     #[rustfmt::skip]
     return match typename {
         // Common types from OpenGL 1.1
-        "GLenum"            => Some("GLEnum"),                      // super::__gl_imports::raw::c_uint;
-        "GLboolean"         => Some("bool"),                        // super::__gl_imports::raw::c_uchar;
-        "GLbitfield"        => Some("GLBitfield"),                  // super::__gl_imports::raw::c_uint;
-        "GLvoid"            => Some("c_void"),                      // super::__gl_imports::raw::c_void;
-        "GLbyte"            => Some("i8"),                          // super::__gl_imports::raw::c_char;
-        "GLshort"           => Some("i16"),                         // super::__gl_imports::raw::c_short;
-        "GLint"             => Some("i32"),                         // super::__gl_imports::raw::c_int;
-        "GLclampx"          => Some("i32"),                         // super::__gl_imports::raw::c_int;
-        "GLubyte"           => Some("u8"),                          // super::__gl_imports::raw::c_uchar;
-        "GLushort"          => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
-        "GLuint"            => Some("u32"),                         // super::__gl_imports::raw::c_uint;
-        "GLsizei"           => Some("i32"),                         // super::__gl_imports::raw::c_int;
-        "GLfloat"           => Some("f32"),                         // super::__gl_imports::raw::c_float;
-        "GLclampf"          => Some("f32"),                         // super::__gl_imports::raw::c_float;
-        "GLdouble"          => Some("f64"),                         // super::__gl_imports::raw::c_double;
-        "GLclampd"          => Some("f64"),                         // super::__gl_imports::raw::c_double;
-        "GLeglImageOES"     => Some("*const c_void"),               // *const super::__gl_imports::raw::c_void;
-        "GLchar"            => Some("i8"),                          // super::__gl_imports::raw::c_char;
-        "GLcharARB"         => Some("i8"),                          // super::__gl_imports::raw::c_char;
+        "GLenum"            => "GLEnum",                        // super::__gl_imports::raw::c_uint;
+        "GLboolean"         => "bool",                          // super::__gl_imports::raw::c_uchar;
+        "GLbitfield"        => "GLBitfield",                    // super::__gl_imports::raw::c_uint;
+        "GLvoid"            => "c_void",                        // super::__gl_imports::raw::c_void;
+        "GLbyte"            => "i8",                            // super::__gl_imports::raw::c_char;
+        "GLshort"           => "i16",                           // super::__gl_imports::raw::c_short;
+        "GLint"             => "i32",                           // super::__gl_imports::raw::c_int;
+        "GLclampx"          => "i32",                           // super::__gl_imports::raw::c_int;
+        "GLubyte"           => "u8",                            // super::__gl_imports::raw::c_uchar;
+        "GLushort"          => "u16",                           // super::__gl_imports::raw::c_ushort;
+        "GLuint"            => "u32",                           // super::__gl_imports::raw::c_uint;
+        "GLsizei"           => "i32",                           // super::__gl_imports::raw::c_int;
+        "GLfloat"           => "f32",                           // super::__gl_imports::raw::c_float;
+        "GLclampf"          => "f32",                           // super::__gl_imports::raw::c_float;
+        "GLdouble"          => "f64",                           // super::__gl_imports::raw::c_double;
+        "GLclampd"          => "f64",                           // super::__gl_imports::raw::c_double;
+        "GLeglImageOES"     => "*const c_void",                 // *const super::__gl_imports::raw::c_void;
+        "GLchar"            => "i8",                            // super::__gl_imports::raw::c_char;
+        "GLcharARB"         => "i8",                            // super::__gl_imports::raw::c_char;
         // -----------------------------------------------------------------------------------------
-        #[cfg(target_os = "macos")]      "GLhandleARB" => Some("*const c_void"),    // *const super::__gl_imports::raw::c_void;
-        #[cfg(not(target_os = "macos"))] "GLhandleARB" => Some("u32"),              // super::__gl_imports::raw::c_uint;
-        "GLhalfARB"         => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
-        "GLhalf"            => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
-        "GLfixed"           => Some("i32"),                         // GLint; (Must be 32 bits)
-        "GLintptr"          => Some("isize"),                       // isize;
-        "GLsizeiptr"        => Some("isize"),                       // isize;
-        "GLint64"           => Some("i64"),                         // i64;
-        "GLuint64"          => Some("u64"),                         // u64;
-        "GLintptrARB"       => Some("isize"),                       // isize;
-        "GLsizeiptrARB"     => Some("isize"),                       // isize;
-        "GLint64EXT"        => Some("i64"),                         // i64;
-        "GLuint64EXT"       => Some("u64"),                         // u64;
-        "GLsync"            => Some("*const types::GLSync"),        // *const __GLsync; (with `pub enum GLSync {}` above it)
+        #[cfg(target_os = "macos")]      "GLhandleARB" => "*const c_void",  // *const super::__gl_imports::raw::c_void;
+        #[cfg(not(target_os = "macos"))] "GLhandleARB" => "u32",            // super::__gl_imports::raw::c_uint;
+        "GLhalfARB"         => "u16",                           // super::__gl_imports::raw::c_ushort;
+        "GLhalf"            => "u16",                           // super::__gl_imports::raw::c_ushort;
+        "GLfixed"           => "i32",                           // GLint; (Must be 32 bits)
+        "GLintptr"          => "isize",                         // isize;
+        "GLsizeiptr"        => "isize",                         // isize;
+        "GLint64"           => "i64",                           // i64;
+        "GLuint64"          => "u64",                           // u64;
+        "GLintptrARB"       => "isize",                         // isize;
+        "GLsizeiptrARB"     => "isize",                         // isize;
+        "GLint64EXT"        => "i64",                           // i64;
+        "GLuint64EXT"       => "u64",                           // u64;
+        "GLsync"            => "*const types::GLSync",          // *const __GLsync; (with `pub enum GLSync {}` above it)
         // Vendor extension types
-        "GLhalfNV"          => Some("u16"),                         // super::__gl_imports::raw::c_ushort;
-        "GLvdpauSurfaceNV"  => Some("isize"),                       // GLintptr;
+        "GLhalfNV"          => "u16",                           // super::__gl_imports::raw::c_ushort;
+        "GLvdpauSurfaceNV"  => "isize",                         // GLintptr;
         // -----------------------------------------------------------------------------------------
-        "GLDEBUGPROC"       => Some("types::GLDebugProc"),
-        "GLDEBUGPROCARB"    => Some("types::GLDebugProc"),
-        "GLDEBUGPROCKHR"    => Some("types::GLDebugProc"),
-        "GLDEBUGPROCAMD"    => Some("types::GLDebugProc_AMD"),
-        _ => None,
+        "GLDEBUGPROC"       => "types::GLDebugProc",
+        "GLDEBUGPROCARB"    => "types::GLDebugProc",
+        "GLDEBUGPROCKHR"    => "types::GLDebugProc",
+        "GLDEBUGPROCAMD"    => "types::GLDebugProc_AMD",
+        _ => unimplemented!("unknown type: {typename}"),
     };
     // cspell:enable
 }
@@ -100,10 +100,10 @@ pub fn rename_xml_type(typename: &str) -> Option<&'static str> {
 
 /// Converts a typename from how it appears after being parsed by [`gl_generator`] into one for usage by this crate.
 ///
-/// Returns [`None`] if the given typename does not (yet) map to anything supported by this crate.
-pub fn rename_lib_type(typename: &str) -> Option<Cow<'_, str>> {
+/// Panics if the given typename does not (yet) map to anything supported by this crate.
+pub fn rename_lib_type(typename: &str) -> Cow<'_, str> {
     if typename == "()" {
-        return Some(typename.into());
+        return typename.into();
     }
 
     let mut res = String::new();
@@ -123,19 +123,18 @@ pub fn rename_lib_type(typename: &str) -> Option<Cow<'_, str>> {
 
     // Map aliases to our types
     if let Some(_) = trim_start_mut(&mut str, "types::") {
-        let our_ty = rename_xml_type(str)?;
-        res.push_str(our_ty);
+        res.push_str(rename_xml_type(str));
     } else if let Some(_) = trim_start_mut(&mut str, "__gl_imports::") {
         if let Some(_) = trim_start_mut(&mut str, "raw::c_void") {
             res.push_str("c_void");
         } else {
-            return None;
+            unimplemented!("unknown type: {typename}");
         }
     } else {
-        return None;
+        unimplemented!("unknown type: {typename}");
     }
 
-    Some(Cow::Owned(res))
+    Cow::Owned(res)
 }
 
 
@@ -219,11 +218,11 @@ pub fn rename_function(ident: &str) -> Cow<'_, str> {
     let mut name = name.from_case(Case::UpperCamel).to_case(Case::Snake);
     if let Some(suffix) = suffix {
         name.push('_');
-        name.push_str(suffix);
+        name += &suffix.to_lowercase();
     }
     if let Some(vendor) = vendor {
         name.push('_');
-        name.push_str(vendor);
+        name += &vendor.to_lowercase();
     }
 
     // Finally, look for any extra replacements manual replacements we want to make and do them. No need to be too fancy
