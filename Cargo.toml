@@ -5,11 +5,17 @@ authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
+
 [dependencies]
-gloog-math = { version = "0.1.0", path = "crates/math" }
-gl = { version = "0.1.0", path = "crates/gl" }
+# Local crates
+bindings = { version = "0.1.0", path = "./bindings" }
+gfx = { version = "0.1.0", path = "./gfx" }
+math = { version = "0.1.0", path = "./math" }
+
+# Third-party deps
 bytemuck = "1.13.1"
 glfw = "0.52.0"
 
+
 [workspace]
-members = ["crates/math", "crates/gl"]
+members = ["./bindings", "./gfx", "./math"]

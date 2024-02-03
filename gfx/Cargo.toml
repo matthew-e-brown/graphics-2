@@ -1,10 +1,10 @@
 [package]
-name = "gloog-core"
-description = "A (hopefully) safe abstraction over OpenGL."
+name = "gfx"
+description = "A safe wrapper around raw OpenGL bindings."
 authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gl = { version = "0.1.0", path = "../gl" }
+bindings = { version = "0.1.0", path = "../bindings" }
 thiserror = "1.0.43"
