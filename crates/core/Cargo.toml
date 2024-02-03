@@ -1,0 +1,10 @@
+[package]
+name = "gloog-core"
+description = "A (hopefully) safe abstraction over OpenGL."
+authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gl = { version = "0.1.0", path = "../gl" }
+thiserror = "1.0.43"
