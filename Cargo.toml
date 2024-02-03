@@ -8,8 +8,7 @@ edition = "2021"
 
 [dependencies]
 # Local crates
-bindings = { version = "0.1.0", path = "./bindings" }
-gfx = { version = "0.1.0", path = "./gfx" }
+opengl = { version = "0.1.0", path = "./opengl" }
 math = { version = "0.1.0", path = "./math" }
 
 # Third-party deps
@@ -18,4 +17,4 @@ glfw = "0.52.0"
 
 
 [workspace]
-members = ["./bindings", "./gfx", "./math"]
+members = ["./opengl", "./math"]
