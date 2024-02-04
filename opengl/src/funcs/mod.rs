@@ -10,8 +10,7 @@ pub use self::shaders::*;
 pub use self::uniforms::*;
 pub use self::vertex::*;
 use crate::gl_convert;
-use crate::types::ClearMask;
-use crate::types::EnableCap;
+use crate::types::{ClearMask, EnableCap};
 
 
 pub fn load_with<F>(load_fn: F)

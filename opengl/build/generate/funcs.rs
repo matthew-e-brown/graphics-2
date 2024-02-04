@@ -7,6 +7,10 @@ use indoc::indoc;
 use crate::rename::{rename_function, rename_lib_type, rename_parameter};
 
 
+/// What to call the final outputted struct. Something like, `GLContext`, `GLFunctionPointers`, etc.
+const STRUCT_NAME: &'static str = "GLFunctions";
+
+
 fn make_params(bindings: &[Binding]) -> String {
     bindings
         .iter()
@@ -50,19 +54,15 @@ fn make_fn_ptr(cmd: &Cmd) -> String {
 }
 
 
-pub fn write_gl_struct(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    // Create the OpenGL context struct
+pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     #[rustfmt::skip]
-    dest.write_all(indoc! {r#"
+    write!(dest, indoc! {r#"
         #[allow(unused_imports)] use core::mem::transmute;
         #[allow(dead_code)] type VoidPtr = *const core::ffi::c_void;
 
-        /// An abstraction over an OpenGL context.
-        ///
-        /// This struct _isn't really_ an "OpenGL context;" really, it is a collection of loaded function pointers for use
-        /// in the current thread.
-        pub struct GLContext {
-    "#}.as_bytes())?;
+        /// A collection of loaded OpenGL function pointers.
+        pub struct {struct_name} {{
+    "#}, struct_name = STRUCT_NAME)?;
 
     for cmd in &registry.cmds {
         let ident = rename_function(&cmd.proto.ident);
@@ -74,22 +74,27 @@ pub fn write_gl_struct(registry: &Registry, dest: &mut impl Write) -> io::Result
 }
 
 
-pub fn write_gl_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    writeln!(dest, "impl GLContext {{")?;
+pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
+    writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
     #[rustfmt::skip]
-    dest.write_all(indoc! {r#"
+    write!(dest, indoc! {r#"
         /// Load all `OpenGL` function pointers using the given function to load function pointers.
         ///
         /// ```ignore
-        /// let gl = GLContext::init(|f| glfw.get_proc_address(f));
+        /// let gl = {struct_name}::init(|f| glfw.get_proc_address(f));
         /// ```
         ///
         /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
         /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
         /// return a non-null pointer after attempting all fallbacks.
+    "#}, struct_name = STRUCT_NAME)?;
+
+    #[rustfmt::skip]
+    dest.write_all(indoc! {r#"
         pub fn init(mut loader_fn: impl FnMut(&'static str) -> *const c_void) -> Result<Self, &'static str> {
-            /// The function that actually calls the loader function with the final function name.
+            /// Loads an OpenGL function from its symbol name, falling back to the ones in the list (in order) if it
+            /// can't be found.
             fn load_ptr<F>(mut loader_fn: F, name: &'static str, fallbacks: &[&'static str]) -> Result<VoidPtr, &'static str>
             where
                 F: FnMut(&'static str) -> *const c_void,
@@ -111,9 +116,6 @@ pub fn write_gl_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::R
                 }
             }
 
-            // SAFETY: We transmute all of the loaded function pointers here, although we don't do any validation. This
-            // is fine, since the user-facing implementations will also be marked as unsafe; they're not really unsafe
-            // until we go to call them. This just changes where the transmutation happens.
             Ok(Self {
     "#}.as_bytes())?;
 
@@ -151,8 +153,8 @@ pub fn write_gl_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::R
 }
 
 
-pub fn write_gl_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    writeln!(dest, "impl GLContext {{")?;
+pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
+    writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
     for cmd in &registry.cmds {
         writeln!(

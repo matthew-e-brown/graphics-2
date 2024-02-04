@@ -1,3 +1,12 @@
+//! This module handles renaming the raw types, functions, and values that come out of the OpenGL spec.
+//!
+//! Mostly, that comes down to converting things from `camelCase` to `snake_case`, `PascalCase`, or `UPPER_SNAKE_CASE`
+//! as per Rust conventions.
+//!
+//! Currently, the functions in this module rename the things returned by [`gl_generator`], not by the actual XML spec.
+//! Eventually, a custom XML parser will probably be implemented. (Probably not until after this code is merged into
+//! [Gloog](https://github.com/matthew-e-brown/gloog), though).
+
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -45,6 +54,16 @@ pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
 /// Converts a typename from how it appears in the raw OpenGL spec into one for usage by this crate.
 ///
 /// Panics if the given typename does not (yet) map to anything supported by this crate.
+///
+/// # A note on type aliases
+///
+/// The `gl` crate (which this crate is based on) uses the `os::raw::c_int` et. al. types for all of its integers. This
+/// is a sensible choice for FFI, of course. For this library, I've opted to simply use plain Rust types wherever
+/// possible, however; [OpenGL specifies all of its types with a specific bit-depth][opengl-types]. That is, OpenGL's
+/// types are strictly defined: a `GLint` is always "32 bits, 2's complement binary integer", so it is safe to use
+/// `i32`.
+///
+/// [opengl-types]: https://www.khronos.org/opengl/wiki/OpenGL_Type
 pub fn rename_xml_type(typename: &str) -> &'static str {
     // cspell:disable
     #[rustfmt::skip]
@@ -208,7 +227,6 @@ pub fn rename_function(ident: &str) -> Cow<'_, str> {
         // Check to see if the suffix we found was a part of an actual word. If it wasn't, we have a proper suffix that
         // we need to trim off and replace after an underscore. If it was, we leave it be.
         if !NON_SUFFIXES.contains(last_word) {
-            println!("{name} matched {suffix_match} --> {}", &name[..name.len() - suffix_match.len()]);
             suffix = Some(suffix_match);
             name = &name[..name.len() - suffix_match.len()];
         }
