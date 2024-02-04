@@ -87,7 +87,7 @@ pub fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
         // Opaque types, pointed to by some function parameters.
         // -----------------------------------------------------------------------------
 
-        /// Opaque type.
+        /// Opaque type. Used as a pointee.
         pub enum GLSync {}
 
         /// Compatible with OpenCL `cl_context`.
@@ -113,7 +113,7 @@ pub fn write_type_aliases(dest: &mut impl Write) -> io::Result<()> {
 }
 
 
-pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Result<()> {
+pub fn write_wrapper_types(dest: &mut impl Write, enums: &SortedEnums) -> io::Result<()> {
     let enums = &enums.standard;
 
     // FIXME: Bring back full implementations for GLEnum and GLBitfields once groups are fully supported.
@@ -241,11 +241,8 @@ pub fn write_wrapper_types(enums: &SortedEnums, dest: &mut impl Write) -> io::Re
 }
 
 
-pub fn write_enum_values(enums: &SortedEnums, dest: &mut impl Write) -> io::Result<()> {
-    let enum_sets = &[
-        ("GLEnum", &enums.standard),
-        ("GLBitfield", &enums.bitfield),
-    ];
+pub fn write_enum_values(dest: &mut impl Write, enums: &SortedEnums) -> io::Result<()> {
+    let enum_sets = &[("GLEnum", &enums.standard), ("GLBitfield", &enums.bitfield)];
 
     for &(typename, enums) in enum_sets {
         for e in enums {

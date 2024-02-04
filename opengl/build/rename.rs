@@ -1,5 +1,16 @@
+//! This module handles renaming the raw types, functions, and values that come out of the OpenGL spec.
+//!
+//! Mostly, that comes down to converting things from `camelCase` to `snake_case`, `PascalCase`, or `UPPER_SNAKE_CASE`
+//! as per Rust conventions.
+//!
+//! Currently, the functions in this module rename the things returned by [`gl_generator`], not by the actual XML spec.
+//! Eventually, a custom XML parser will probably be implemented. (Probably not until after this code is merged into
+//! [Gloog](https://github.com/matthew-e-brown/gloog), though).
+
 use std::borrow::Cow;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, RwLock};
 
 use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
@@ -35,6 +46,25 @@ fn trim_end_mut<'a, 'p>(str: &mut &'a str, pat: &'p str) -> Option<&'p str> {
 }
 
 
+/// Converts a string slice to a static one.
+///
+/// # Safety
+///
+/// This function should be **only** be used for returning slices that refer to data owned by [`lazy_static`] hashmaps.
+///
+/// We cache the generation of different function, parameter, and type names, etc. so that we don't have to recompute
+/// them every time. However, the hashmaps are inside of [`RwLocks`][RwLock], meaning we can only access them through
+/// `RwLockReadGuard` and `RwLockWriteGuard` instances. These guard structs have lifetimes tied to the `RwLock`, which
+/// makes sense.
+///
+/// In our case, we will only ever be giving permanent ownership of a [`String`] to these hashmaps, or returning a
+/// reference to a `String` we previously inserted. Because each of our hashmaps are private (i.e. local) variables, we
+/// know that nobody else will take and drop one from out from under our noses.
+unsafe fn str_to_static<'a>(str: &'a str) -> &'static str {
+    std::mem::transmute::<&'a str, &'static str>(str)
+}
+
+
 /// Converts an enum variant from `UPPER_SNAKE_CASE` into one that this crate can use.
 pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
     // FIXME: Once groups are sorted out, this'll need to convert to UpperCamelCase instead.
@@ -45,6 +75,16 @@ pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
 /// Converts a typename from how it appears in the raw OpenGL spec into one for usage by this crate.
 ///
 /// Panics if the given typename does not (yet) map to anything supported by this crate.
+///
+/// # A note on type aliases
+///
+/// The `gl` crate (which this crate is based on) uses the `os::raw::c_int` et. al. types for all of its integers. This
+/// is a sensible choice for FFI, of course. For this library, I've opted to simply use plain Rust types wherever
+/// possible, however; [OpenGL specifies all of its types with a specific bit-depth][opengl-types]. That is, OpenGL's
+/// types are strictly defined: a `GLint` is always "32 bits, 2's complement binary integer", so it is safe to use
+/// `i32`.
+///
+/// [opengl-types]: https://www.khronos.org/opengl/wiki/OpenGL_Type
 pub fn rename_xml_type(typename: &str) -> &'static str {
     // cspell:disable
     #[rustfmt::skip]
@@ -100,11 +140,30 @@ pub fn rename_xml_type(typename: &str) -> &'static str {
 
 /// Converts a typename from how it appears after being parsed by [`gl_generator`] into one for usage by this crate.
 ///
+/// The ones from `gl_generator` are the ones that look like `__gl_imports::raw::c_ushort`, `types::GLuint`, and so on.
+///
 /// Panics if the given typename does not (yet) map to anything supported by this crate.
-pub fn rename_lib_type(typename: &str) -> Cow<'_, str> {
+pub fn rename_lib_type(typename: &str) -> &'static str {
     if typename == "()" {
-        return typename.into();
+        return "()";
     }
+
+    // -----------------------------------------------------------------------------------------------------------------
+
+    // note to self: see `rename_function` for comments/docs about caching
+    lazy_static! {
+        static ref CACHE: Arc<RwLock<BTreeMap<String, String>>> = Arc::new(RwLock::new(BTreeMap::new()));
+    }
+
+    let cache = CACHE.read().unwrap();
+    if let Some(existing) = cache.get(typename).map(|s| s.as_str()) {
+        // SAFETY: see function docs.
+        return unsafe { str_to_static(existing) };
+    }
+
+    std::mem::drop(cache); // drop lock
+
+    // -----------------------------------------------------------------------------------------------------------------
 
     let mut res = String::new();
     let mut str = typename;
@@ -123,8 +182,11 @@ pub fn rename_lib_type(typename: &str) -> Cow<'_, str> {
 
     // Map aliases to our types
     if let Some(_) = trim_start_mut(&mut str, "types::") {
+        // Type looked like `types::GLtype`; rename the ending to our version.
         res.push_str(rename_xml_type(str));
     } else if let Some(_) = trim_start_mut(&mut str, "__gl_imports::") {
+        // Type had `__gl_imports::` at the start. Only known thing with that at the end (in 4.6 core) is a C Void
+        // pointer.
         if let Some(_) = trim_start_mut(&mut str, "raw::c_void") {
             res.push_str("c_void");
         } else {
@@ -134,31 +196,21 @@ pub fn rename_lib_type(typename: &str) -> Cow<'_, str> {
         unimplemented!("unknown type: {typename}");
     }
 
-    Cow::Owned(res)
+    // -----------------------------------------------------------------------------------------------------------------
+
+    let mut cache = CACHE.write().unwrap();
+    let Entry::Vacant(vacant) = cache.entry(typename.to_owned()) else {
+        unreachable!();
+    };
+
+    let inserted = vacant.insert(res).as_str();
+    // SAFETY: see function docs.
+    unsafe { str_to_static(inserted) }
 }
 
 
 /// Converts a function identifier to snake case, taking care to handle OpenGL-specific function endings (e.g., `1fv`).
-pub fn rename_function(ident: &str) -> Cow<'_, str> {
-    #[rustfmt::skip]
-    lazy_static! {
-        // cspell:disable-next-line
-        static ref SUFFIXES: Regex = Regex::new(r"(?:[1234]|[234]x[234]|64)?(?:b|s|i_?|i64_?|f|d|ub|us|ui|ui64|x)?v?$").unwrap();
-
-        /// Valid words at the end of functions.
-        ///
-        /// These are things that may trip a false positive when searching for function suffixes. For example, the `d`
-        /// on the end of `Enabled` matches the suffix regex, but we don't want to split that `d` off of `Enable`.
-        static ref NON_SUFFIXES: BTreeSet<Str> = BTreeSet::from_iter([
-            // cspell:disable
-            "Arrays", "Attrib", "Box", "Buffers", "Elements", "Enabled", "End", "Feedbacks", "Fixed", "Framebuffers",
-            "Index", "Indexed", "Indices", "Lists", "Minmax", "Matrix", "Names", "Pipelines", "Pixels", "Queries",
-            "Rects", "Renderbuffers", "Samplers", "Shaders", "Stages", "Status", "Textures", "Varyings", "Vertex",
-            "1D", "2D", "3D",
-            // cspell:enable
-        ]);
-    }
-
+pub fn rename_function(ident: &str) -> &'static str {
     /// Things that we want to trim off the end of our string before we consider the suffixes. Mostly just the list
     /// of vendors.
     #[rustfmt::skip]
@@ -177,6 +229,39 @@ pub fn rename_function(ident: &str) -> Cow<'_, str> {
         ("getn", "get_n"),
         // cspell:enable
     ];
+
+    #[rustfmt::skip]
+    lazy_static! {
+        // cspell:disable-next-line
+        static ref SUFFIXES: Regex = Regex::new(r"(?:[1234]|[234]x[234]|64)?(?:b|s|i_?|i64_?|f|d|ub|us|ui|ui64|x)?v?$").unwrap();
+
+        /// Valid words at the end of functions.
+        ///
+        /// These are things that may trip a false positive when searching for function suffixes. For example, the `d`
+        /// on the end of `Enabled` matches the suffix regex, but we don't want to split that `d` off of `Enable`.
+        static ref NON_SUFFIXES: BTreeSet<Str> = BTreeSet::from_iter([
+            // cspell:disable
+            "Arrays", "Attrib", "Box", "Buffers", "Elements", "Enabled", "End", "Feedbacks", "Fixed", "Framebuffers",
+            "Index", "Indexed", "Indices", "Lists", "Minmax", "Matrix", "Names", "Pipelines", "Pixels", "Queries",
+            "Rects", "Renderbuffers", "Samplers", "Shaders", "Stages", "Status", "Textures", "Varyings", "Vertex",
+            "1D", "2D", "3D",
+            // cspell:enable
+        ]);
+
+        /// A cache of all computed function names, to avoid re-parsing and reallocating every time.
+        static ref CACHE: Arc<RwLock<BTreeMap<String, String>>> = Arc::new(RwLock::new(BTreeMap::new()));
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+
+    // Check if this ident has already been renamed before
+    let cache = CACHE.read().unwrap();
+    if let Some(existing) = cache.get(ident).map(|s| s.as_str()) {
+        // SAFETY: see function docs.
+        return unsafe { str_to_static(existing) };
+    }
+
+    std::mem::drop(cache); // drop lock
 
     // -----------------------------------------------------------------------------------------------------------------
 
@@ -208,7 +293,6 @@ pub fn rename_function(ident: &str) -> Cow<'_, str> {
         // Check to see if the suffix we found was a part of an actual word. If it wasn't, we have a proper suffix that
         // we need to trim off and replace after an underscore. If it was, we leave it be.
         if !NON_SUFFIXES.contains(last_word) {
-            println!("{name} matched {suffix_match} --> {}", &name[..name.len() - suffix_match.len()]);
             suffix = Some(suffix_match);
             name = &name[..name.len() - suffix_match.len()];
         }
@@ -231,13 +315,24 @@ pub fn rename_function(ident: &str) -> Cow<'_, str> {
         name = name.replace(replace, with);
     }
 
-    Cow::Owned(name)
+    // -----------------------------------------------------------------------------------------------------------------
+
+    // Now insert it into the map and return (need to convert ident to a string so we can own it in the static map)
+    let mut cache = CACHE.write().unwrap();
+    let Entry::Vacant(vacant) = cache.entry(ident.to_owned()) else {
+        // We already checked this entry earlier in the function, and returned if it wasn't vacant; it must be vacant.
+        unreachable!();
+    };
+
+    let inserted = vacant.insert(name).as_str();
+    // SAFETY: see function docs.
+    unsafe { str_to_static(inserted) }
 }
 
 
-pub fn rename_parameter(ident: &str) -> Cow<'_, str> {
+pub fn rename_parameter(ident: &str) -> &'static str {
     lazy_static! {
-        static ref MANUAL_MAPPINGS: BTreeMap<Str, Str> = BTreeMap::from_iter([
+        static ref CACHE: Arc<RwLock<BTreeMap<String, String>>> = Arc::new(RwLock::new(BTreeMap::from_iter([
             // I prefer 'ty' over 'type_', personally :)
             ("type_", "ty"),
             // If we're trying to avoid collisions with the 'ref' keyword, I think this is a fair thing to name it to:
@@ -267,14 +362,23 @@ pub fn rename_parameter(ident: &str) -> Cow<'_, str> {
             ("relativeoffset", "relative_offset"),
             ("bindingindex", "binding_index"),
             // cspell:enable
-        ]);
+        ].into_iter().map(|(k, v)| (k.to_owned(), v.to_owned()))))); // ((((((lol))))))
     }
 
-    if let Some(&preferred) = MANUAL_MAPPINGS.get(ident) {
-        Cow::Borrowed(preferred)
-    } else if ident.is_case(Case::Snake) {
-        Cow::Borrowed(ident)
+    let cache = CACHE.read().unwrap();
+    if let Some(existing) = cache.get(ident).map(|s| s.as_str()) {
+        // SAFETY: see function docs.
+        unsafe { str_to_static(existing) }
     } else {
-        Cow::Owned(ident.to_case(Case::Snake))
+        std::mem::drop(cache); // drop lock
+
+        let mut cache = CACHE.write().unwrap();
+        let Entry::Vacant(vacant) = cache.entry(ident.to_owned()) else {
+            unreachable!()
+        };
+
+        let inserted = vacant.insert(ident.to_case(Case::Snake)).as_str();
+        // SAFETY: see function docs
+        unsafe { str_to_static(inserted) }
     }
 }
