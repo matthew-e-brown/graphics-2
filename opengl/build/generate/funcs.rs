@@ -65,8 +65,7 @@ pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Resu
     "#}, struct_name = STRUCT_NAME)?;
 
     for cmd in &registry.cmds {
-        let ident = rename_function(&cmd.proto.ident);
-        writeln!(dest, "    {ident}: VoidPtr,")?;
+        writeln!(dest, "    {new_name}: VoidPtr,", new_name = rename_function(&cmd.proto.ident))?;
     }
 
     writeln!(dest, "}}")?;
@@ -124,6 +123,8 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
         let raw_name = &cmd.proto.ident[..];
         let new_name = rename_function(raw_name);
 
+        // This is the part that actually loads the raw function pointer by symbol name---so we need to be careful to
+        // get the name right!
         let load_name = match registry.api {
             Api::Gl | Api::GlCore | Api::Gles1 | Api::Gles2 | Api::Glsc2 => format!("\"gl{raw_name}\""),
             Api::Glx => format!("\"glX{raw_name}\""),
@@ -157,18 +158,24 @@ pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Resu
     writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
     for cmd in &registry.cmds {
-        writeln!(
-            dest,
-            "    pub unsafe fn {new_name}(&self, {params}){ret_ty} {{ (transmute::<VoidPtr, {fn_ptr}>(self.{new_name}))({args}) }}",
-            new_name = rename_function(&cmd.proto.ident[..]),
-            params = make_params(&cmd.params),
-            ret_ty = {
-                let ty = rename_lib_type(&cmd.proto.ty);
-                if ty == "()" { "".into() } else { Cow::Owned(format!(" -> {ty}")) }
-            },
-            fn_ptr = make_fn_ptr(&cmd),
-            args = make_args(&cmd.params)
-        )?;
+        let new_name = rename_function(&cmd.proto.ident);
+        let ret_type = rename_lib_type(&cmd.proto.ty);
+        let fn_ptr = make_fn_ptr(&cmd);
+        let args = make_args(&cmd.params);
+
+        write!(dest, "    pub unsafe fn {new_name}")?;
+
+        if cmd.params.len() == 0 {
+            write!(dest, "(&self)")?;
+        } else {
+            write!(dest, "(&self, {params})", params = make_params(&cmd.params))?;
+        }
+
+        if ret_type != "()" {
+            write!(dest, " -> {ret_type}")?;
+        }
+
+        writeln!(dest, " {{ (transmute::<VoidPtr, {fn_ptr}>(self.{new_name}))({args}) }}")?;
     }
 
     writeln!(dest, "}}")?; // Close impl
