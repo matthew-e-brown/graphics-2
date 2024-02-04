@@ -10,8 +10,8 @@ use std::mem::MaybeUninit;
 
 use bytemuck::cast_slice;
 use glfw::{Action, Context, Key, OpenGlProfileHint, SwapInterval, WindowEvent, WindowHint, WindowMode};
-use gloog::core as gl;
-use gloog::core::types::{
+use math::{Matrix4D as Mat4, Vector3D as Vec3};
+use opengl::types::{
     BufferTarget,
     BufferUsage,
     ClearMask,
@@ -21,29 +21,29 @@ use gloog::core::types::{
     ShaderType,
     VertexAttribType,
 };
-use gloog::math::{Matrix4D, Vector3D};
+use opengl::GLContext;
 
 
-const POSITION_DATA: [Vector3D; 8] = [
-    Vector3D::new(-0.5, -0.5, 0.5),
-    Vector3D::new(-0.5, 0.5, 0.5),
-    Vector3D::new(0.5, 0.5, 0.5),
-    Vector3D::new(0.5, -0.5, 0.5),
-    Vector3D::new(-0.5, -0.5, -0.5),
-    Vector3D::new(-0.5, 0.5, -0.5),
-    Vector3D::new(0.5, 0.5, -0.5),
-    Vector3D::new(0.5, -0.5, -0.5),
+const POSITION_DATA: [Vec3; 8] = [
+    Vec3::new(-0.5, -0.5, 0.5),
+    Vec3::new(-0.5, 0.5, 0.5),
+    Vec3::new(0.5, 0.5, 0.5),
+    Vec3::new(0.5, -0.5, 0.5),
+    Vec3::new(-0.5, -0.5, -0.5),
+    Vec3::new(-0.5, 0.5, -0.5),
+    Vec3::new(0.5, 0.5, -0.5),
+    Vec3::new(0.5, -0.5, -0.5),
 ];
 
-const COLOR_DATA: [Vector3D; 8] = [
-    Vector3D::new(1.0, 0.0, 0.0),
-    Vector3D::new(0.0, 1.0, 0.0),
-    Vector3D::new(0.0, 0.0, 1.0),
-    Vector3D::new(1.0, 1.0, 0.0),
-    Vector3D::new(0.0, 1.0, 1.0),
-    Vector3D::new(1.0, 0.0, 1.0),
-    Vector3D::new(0.5, 0.0, 1.0),
-    Vector3D::new(0.0, 0.5, 1.0),
+const COLOR_DATA: [Vec3; 8] = [
+    Vec3::new(1.0, 0.0, 0.0),
+    Vec3::new(0.0, 1.0, 0.0),
+    Vec3::new(0.0, 0.0, 1.0),
+    Vec3::new(1.0, 1.0, 0.0),
+    Vec3::new(0.0, 1.0, 1.0),
+    Vec3::new(1.0, 0.0, 1.0),
+    Vec3::new(0.5, 0.0, 1.0),
+    Vec3::new(0.0, 0.5, 1.0),
 ];
 
 
@@ -61,7 +61,7 @@ pub fn main() {
         .create_window(512, 512, "Graphics II - Test 1", WindowMode::Windowed)
         .expect("Could not create the window.");
 
-    gl::load_with(|s| window.get_proc_address(s));
+    let gl = GLContext::init(|s| window.get_proc_address(s)).unwrap();
 
     glfw.set_swap_interval(SwapInterval::Sync(1));
     window.set_resizable(false);
@@ -69,36 +69,42 @@ pub fn main() {
     window.make_current();
 
     let (width, height) = window.get_framebuffer_size();
-    gl::viewport(0, 0, width, height);
+    gl.viewport(0, 0, width, height);
 
-    gl::clear_color(0.17, 0.17, 0.17, 1.0);
-    gl::enable(EnableCap::DepthTest);
+    gl.clear_color(0.17, 0.17, 0.17, 1.0);
+    gl.enable(EnableCap::DepthTest);
 
-    let program = setup_program();
-    gl::use_program(program);
+    let program = setup_program(&gl);
+    gl.use_program(program);
 
-    let vao = gl::create_vertex_array();
-    gl::bind_vertex_array(vao);
+    let vao = gl.create_vertex_array();
+    gl.bind_vertex_array(vao);
 
-    let vbo_positions = gl::create_buffer();
+    let vbo_positions = gl.create_buffer();
     let position_data = cubify(&POSITION_DATA);
-    gl::bind_buffer(BufferTarget::ArrayBuffer, vbo_positions);
-    gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&position_data[..]), BufferUsage::StaticDraw);
-    gl::vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, 0, 0);
-    gl::enable_vertex_attrib_array(0);
+    gl.bind_buffer(BufferTarget::ArrayBuffer, vbo_positions);
+    gl.buffer_data(BufferTarget::ArrayBuffer, cast_slice(&position_data[..]), BufferUsage::StaticDraw);
+    gl.vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, 0, 0);
+    gl.enable_vertex_attrib_array(0);
 
-    let vbo_colors = gl::create_buffer();
+    let vbo_colors = gl.create_buffer();
     let color_data = cubify(&COLOR_DATA);
-    gl::bind_buffer(BufferTarget::ArrayBuffer, vbo_colors);
-    gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&color_data[..]), BufferUsage::StaticDraw);
-    gl::vertex_attrib_pointer(1, 3, VertexAttribType::Float, false, 0, 0);
-    gl::enable_vertex_attrib_array(1);
+    gl.bind_buffer(BufferTarget::ArrayBuffer, vbo_colors);
+    gl.buffer_data(BufferTarget::ArrayBuffer, cast_slice(&color_data[..]), BufferUsage::StaticDraw);
+    gl.vertex_attrib_pointer(1, 3, VertexAttribType::Float, false, 0, 0);
+    gl.enable_vertex_attrib_array(1);
 
-    let u_model = gl::get_uniform_location(program, "u_model_matrix").expect("couldn't find `u_model_matrix`");
-    let u_view = gl::get_uniform_location(program, "u_view_matrix").expect("couldn't find `u_view_matrix`");
-    let u_proj = gl::get_uniform_location(program, "u_proj_matrix").expect("couldn't find `u_proj_matrix`");
+    let u_model = gl
+        .get_uniform_location(program, "u_model_matrix")
+        .expect("couldn't find `u_model_matrix`");
+    let u_view = gl
+        .get_uniform_location(program, "u_view_matrix")
+        .expect("couldn't find `u_view_matrix`");
+    let u_proj = gl
+        .get_uniform_location(program, "u_proj_matrix")
+        .expect("couldn't find `u_proj_matrix`");
 
-    let view_matrix = look_at(&Vector3D::new(0.0, 0.0, 2.0), &Vector3D::new(0., 0., 0.));
+    let view_matrix = look_at(&Vec3::new(0.0, 0.0, 2.0), &Vec3::new(0., 0., 0.));
     let proj_matrix = perspective(80.0, 1.00, 0.25, 50.0);
 
     println!("view: {:#?}", view_matrix);
@@ -108,13 +114,13 @@ pub fn main() {
 
     while !window.should_close() {
         {
-            gl::clear(ClearMask::COLOR | ClearMask::DEPTH);
+            gl.clear(ClearMask::COLOR | ClearMask::DEPTH);
 
-            gl::uniform_matrix_4fv(u_model, false, &[*cube.model_matrix().as_2d_array()]);
-            gl::uniform_matrix_4fv(u_view, false, &[*view_matrix.as_2d_array()]);
-            gl::uniform_matrix_4fv(u_proj, false, &[*proj_matrix.as_2d_array()]);
+            gl.uniform_matrix_4fv(u_model, false, &[*cube.model_matrix().as_2d_array()]);
+            gl.uniform_matrix_4fv(u_view, false, &[*view_matrix.as_2d_array()]);
+            gl.uniform_matrix_4fv(u_proj, false, &[*proj_matrix.as_2d_array()]);
 
-            gl::draw_arrays(DrawMode::Triangles, 0, 36);
+            gl.draw_arrays(DrawMode::Triangles, 0, 36);
         }
 
         {
@@ -137,23 +143,23 @@ pub fn main() {
 
 
 struct Cube {
-    pub position: Vector3D,
-    pub rotation: Vector3D,
-    pub scale: Vector3D,
+    pub position: Vec3,
+    pub rotation: Vec3,
+    pub scale: Vec3,
 }
 
 impl Cube {
     pub fn new() -> Self {
         Self {
-            position: Vector3D::new(0., 0., 0.),
-            rotation: Vector3D::new(0., 0., 0.),
-            scale: Vector3D::new(1., 1., 1.),
+            position: Vec3::new(0., 0., 0.),
+            rotation: Vec3::new(0., 0., 0.),
+            scale: Vec3::new(1., 1., 1.),
         }
     }
 
-    pub fn model_matrix(&self) -> Matrix4D {
+    pub fn model_matrix(&self) -> Mat4 {
         let scale = {
-            let mut s = Matrix4D::IDENTITY;
+            let mut s = Mat4::IDENTITY;
             s[[0, 0]] = self.scale.x;
             s[[1, 1]] = self.scale.y;
             s[[2, 2]] = self.scale.z;
@@ -161,7 +167,7 @@ impl Cube {
         };
 
         let translation = {
-            let mut t = Matrix4D::IDENTITY;
+            let mut t = Mat4::IDENTITY;
             t[[0, 3]] = self.position.x;
             t[[1, 3]] = self.position.y;
             t[[2, 3]] = self.position.z;
@@ -177,7 +183,7 @@ impl Cube {
             let cos_z = self.rotation.z.cos();
 
             #[rustfmt::skip]
-            let x = Matrix4D::new(
+            let x = Mat4::new(
                 1.0,        0.0,        0.0,    0.0,
                 0.0,        cos_x,     -sin_x,  0.0,
                 0.0,        sin_x,      cos_x,  0.0,
@@ -185,7 +191,7 @@ impl Cube {
             );
 
             #[rustfmt::skip]
-            let y = Matrix4D::new(
+            let y = Mat4::new(
                 cos_y,      0.0,        sin_y,  0.0,
                 0.0,        1.0,        0.0,    0.0,
                -sin_y,      0.0,        cos_y,  0.0,
@@ -193,7 +199,7 @@ impl Cube {
             );
 
             #[rustfmt::skip]
-            let z = Matrix4D::new(
+            let z = Mat4::new(
                 cos_z,     -sin_z,      0.0,    0.0,
                 sin_z,      cos_z,      0.0,    0.0,
                 0.0,        0.0,        1.0,    0.0,
@@ -209,10 +215,10 @@ impl Cube {
 
 
 // cspell:words cubify
-fn cubify(vertices: &[Vector3D; 8]) -> [Vector3D; 36] {
+fn cubify(vertices: &[Vec3; 8]) -> [Vec3; 36] {
     // SAFETY: an array of `MaybeUninit` is always safe to assume initialized, since an uninitialized `MaybeUninit` is
     // technically in a valid, initialized state.
-    let mut array: [MaybeUninit<Vector3D>; 36] = unsafe { MaybeUninit::uninit().assume_init() };
+    let mut array: [MaybeUninit<Vec3>; 36] = unsafe { MaybeUninit::uninit().assume_init() };
     let mut i = 0;
 
     let mut push_quad = |a, b, c, d| {
@@ -223,7 +229,7 @@ fn cubify(vertices: &[Vector3D; 8]) -> [Vector3D; 36] {
 
         // Copy vectors into a new block of six vectors (3 for each of the 2 triangles), and write all six of those into
         // the output array all at once.
-        let ptr = array[i].as_mut_ptr() as *mut [Vector3D; 6];
+        let ptr = array[i].as_mut_ptr() as *mut [Vec3; 6];
         // SAFETY: this memory is currently uninitialized so we can safely write over it; we just got `ptr` from a valid
         // reference so it is guaranteed to be aligned; this array literal is guaranteed by Rust to be packed in memory.
         unsafe { std::ptr::write(ptr, [*tl, *bl, *br, *tl, *br, *tr]) };
@@ -243,33 +249,33 @@ fn cubify(vertices: &[Vector3D; 8]) -> [Vector3D; 36] {
 }
 
 
-fn setup_program() -> ProgramID {
-    let vert = gl::create_shader(ShaderType::Vertex).unwrap();
-    let frag = gl::create_shader(ShaderType::Fragment).unwrap();
+fn setup_program(gl: &GLContext) -> ProgramID {
+    let vert = gl.create_shader(ShaderType::Vertex);
+    let frag = gl.create_shader(ShaderType::Fragment);
 
-    gl::shader_source(vert, &[&include_str!("./shader-vert.glsl")]);
-    gl::shader_source(frag, &[&include_str!("./shader-frag.glsl")]);
+    gl.shader_source(vert, &[&include_str!("./shader-vert.glsl")]);
+    gl.shader_source(frag, &[&include_str!("./shader-frag.glsl")]);
 
-    gl::compile_shader(vert).unwrap();
-    gl::compile_shader(frag).unwrap();
+    gl.compile_shader(vert).unwrap();
+    gl.compile_shader(frag).unwrap();
 
-    let program = gl::create_program().unwrap();
-    gl::attach_shader(program, vert);
-    gl::attach_shader(program, frag);
+    let program = gl.create_program();
+    gl.attach_shader(program, vert);
+    gl.attach_shader(program, frag);
 
-    gl::link_program(program).unwrap();
+    gl.link_program(program).unwrap();
 
-    gl::detach_shader(program, vert);
-    gl::detach_shader(program, frag);
-    gl::delete_shader(vert);
-    gl::delete_shader(frag);
+    gl.detach_shader(program, vert);
+    gl.detach_shader(program, frag);
+    gl.delete_shader(vert);
+    gl.delete_shader(frag);
 
     program
 }
 
 
-fn look_at(from: &Vector3D, to: &Vector3D) -> Matrix4D {
-    let world_up = Vector3D::UNIT_Y;
+fn look_at(from: &Vec3, to: &Vec3) -> Mat4 {
+    let world_up = Vec3::UNIT_Y;
 
     let d = (from - to).norm(); // direction
     let r = world_up.cross(&d).norm(); // right
@@ -277,12 +283,12 @@ fn look_at(from: &Vector3D, to: &Vector3D) -> Matrix4D {
     let p = -from;
 
     #[rustfmt::skip]
-    let m = Matrix4D::new(
+    let m = Mat4::new(
         r.x, r.y, r.z, 0.0,
         u.x, u.y, u.z, 0.0,
         d.x, d.y, d.z, 0.0,
         0.0, 0.0, 0.0, 1.0,
-    ) * Matrix4D::new(
+    ) * Mat4::new(
         1.0, 0.0, 0.0, p.x,
         0.0, 1.0, 0.0, p.y,
         0.0, 0.0, 1.0, p.z,
@@ -291,14 +297,14 @@ fn look_at(from: &Vector3D, to: &Vector3D) -> Matrix4D {
     m
 }
 
-fn perspective(fov_deg: f32, aspect: f32, near_clip: f32, far_clip: f32) -> Matrix4D {
+fn perspective(fov_deg: f32, aspect: f32, near_clip: f32, far_clip: f32) -> Mat4 {
     let fov = (fov_deg.to_radians() / 2.0).tan();
     let a = aspect;
     let n = near_clip;
     let f = far_clip;
 
     #[rustfmt::skip]
-    let m = Matrix4D::new_cm(
+    let m = Mat4::new_cm(
         1.0 / (a * fov),  0.0,          0.0,                        0.0,
         0.0,              1.0 / fov,    0.0,                        0.0,
         0.0,              0.0,         -(f + n) / (f - n),         -1.0,

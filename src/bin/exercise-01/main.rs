@@ -2,9 +2,9 @@ use std::mem::size_of;
 
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
-use gloog::core as gl;
-use gloog::core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
-use gloog::math::Vector3D as Vec3;
+use math::Vector3D as Vec3;
+use opengl::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
+use opengl::GLContext;
 
 
 const VERTICES: [[Vec3; 2]; 3] = [
@@ -36,7 +36,7 @@ pub fn main() {
         .expect("Could not create the window.");
 
     // Pass all calls to load OpenGL symbols to GLFW
-    gl::load_with(|s| window.get_proc_address(s));
+    let gl = GLContext::init(|s| window.get_proc_address(s)).unwrap();
 
     glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
     window.set_resizable(false);
@@ -45,37 +45,37 @@ pub fn main() {
 
     // Now that the window is loaded, initialize the viewport to the same size as the framebuffer
     let (width, height) = window.get_framebuffer_size();
-    gl::viewport(0, 0, width, height);
+    gl.viewport(0, 0, width, height);
 
     // OpenGL rendering set up
     // -----------------------------------------------------------------
 
-    let program = compile_and_link_program().unwrap();
-    gl::use_program(program);
+    let program = compile_and_link_program(&gl).unwrap();
+    gl.use_program(program);
 
-    let vbo = gl::create_buffer();
-    gl::bind_buffer(BufferTarget::ArrayBuffer, vbo);
-    gl::buffer_data(BufferTarget::ArrayBuffer, cast_slice(&VERTICES[..]), BufferUsage::StaticDraw);
+    let vbo = gl.create_buffer();
+    gl.bind_buffer(BufferTarget::ArrayBuffer, vbo);
+    gl.buffer_data(BufferTarget::ArrayBuffer, cast_slice(&VERTICES[..]), BufferUsage::StaticDraw);
 
-    let vao = gl::create_vertex_array();
-    gl::bind_vertex_array(vao);
+    let vao = gl.create_vertex_array();
+    gl.bind_vertex_array(vao);
 
     let vec_size = size_of::<Vec3>();
     let stride = vec_size as isize * 2;
 
-    gl::vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, stride, vec_size * 0);
-    gl::vertex_attrib_pointer(1, 3, VertexAttribType::Float, false, stride, vec_size * 1);
-    gl::enable_vertex_attrib_array(0);
-    gl::enable_vertex_attrib_array(1);
+    gl.vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, stride, vec_size * 0);
+    gl.vertex_attrib_pointer(1, 3, VertexAttribType::Float, false, stride, vec_size * 1);
+    gl.enable_vertex_attrib_array(0);
+    gl.enable_vertex_attrib_array(1);
 
     // Draw loop
     // -----------------------------------------------------------------
 
     while !window.should_close() {
-        gl::clear_color(0.17, 0.17, 0.17, 1.0);
-        gl::clear(ClearMask::COLOR);
-        gl::bind_vertex_array(vao);
-        gl::draw_arrays(DrawMode::Triangles, 0, VERTICES.len());
+        gl.clear_color(0.17, 0.17, 0.17, 1.0);
+        gl.clear(ClearMask::COLOR);
+        gl.bind_vertex_array(vao);
+        gl.draw_arrays(DrawMode::Triangles, 0, VERTICES.len());
 
         window.swap_buffers();
         glfw.poll_events();
@@ -93,25 +93,25 @@ pub fn main() {
 }
 
 
-fn compile_and_link_program() -> Result<ProgramID, String> {
-    let vert_shader = gl::create_shader(ShaderType::Vertex).map_err(|_| "could not create vertex shader")?;
-    let frag_shader = gl::create_shader(ShaderType::Fragment).map_err(|_| "could not create fragment shader")?;
+fn compile_and_link_program(gl: &GLContext) -> Result<ProgramID, String> {
+    let vert_shader = gl.create_shader(ShaderType::Vertex);
+    let frag_shader = gl.create_shader(ShaderType::Fragment);
 
     // Just include the entire source-code of the shaders in the binary, for now
-    gl::shader_source(vert_shader, &[include_str!("./shader-vert.glsl")]);
-    gl::shader_source(frag_shader, &[include_str!("./shader-frag.glsl")]);
+    gl.shader_source(vert_shader, &[include_str!("./shader-vert.glsl")]);
+    gl.shader_source(frag_shader, &[include_str!("./shader-frag.glsl")]);
 
-    gl::compile_shader(vert_shader)?;
-    gl::compile_shader(frag_shader)?;
+    gl.compile_shader(vert_shader)?;
+    gl.compile_shader(frag_shader)?;
 
-    let program = gl::create_program().map_err(|_| "could not create program")?;
-    gl::attach_shader(program, vert_shader);
-    gl::attach_shader(program, frag_shader);
+    let program = gl.create_program();
+    gl.attach_shader(program, vert_shader);
+    gl.attach_shader(program, frag_shader);
 
-    gl::link_program(program)?;
+    gl.link_program(program)?;
 
-    gl::detach_shader(program, vert_shader);
-    gl::detach_shader(program, frag_shader);
+    gl.detach_shader(program, vert_shader);
+    gl.detach_shader(program, frag_shader);
 
     Ok(program)
 }

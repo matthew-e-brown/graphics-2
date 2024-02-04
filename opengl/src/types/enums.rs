@@ -349,8 +349,8 @@ gl_enum! {
         // /// If enabled, compute the minimum and maximum values of incoming RGBA color values. See glMinmax.
         // Minmax => MINMAX,
 
-        /// If enabled, use multiple fragment samples in computing the final color of a pixel. See glSampleCoverage.
-        Multisample => MULTISAMPLE,
+        // /// If enabled, use multiple fragment samples in computing the final color of a pixel. See glSampleCoverage.
+        // Multisample => MULTISAMPLE,
 
         // /// If enabled and no vertex shader is active, normal vectors are normalized to unit length after transformation
         // /// and before lighting. This method is generally less efficient than GL_RESCALE_NORMAL. See glNormal and
@@ -396,16 +396,16 @@ gl_enum! {
         // /// efficient than GL_NORMALIZE. See glNormal and glNormalPointer.
         // RescaleNormal => RESCALE_NORMAL,
 
-        /// If enabled, compute a temporary coverage value where each bit is determined by the alpha value at the
-        /// corresponding sample location. The temporary coverage value is then ANDed with the fragment coverage value.
-        SampleAlphaToCoverage => SAMPLE_ALPHA_TO_COVERAGE,
+        // /// If enabled, compute a temporary coverage value where each bit is determined by the alpha value at the
+        // /// corresponding sample location. The temporary coverage value is then ANDed with the fragment coverage value.
+        // SampleAlphaToCoverage => SAMPLE_ALPHA_TO_COVERAGE,
 
-        /// If enabled, each sample alpha value is replaced by the maximum representable alpha value.
-        SampleAlphaToOne => SAMPLE_ALPHA_TO_ONE,
+        // /// If enabled, each sample alpha value is replaced by the maximum representable alpha value.
+        // SampleAlphaToOne => SAMPLE_ALPHA_TO_ONE,
 
-        /// If enabled, the fragment's coverage is ANDed with the temporary coverage value. If GL_SAMPLE_COVERAGE_INVERT
-        /// is set to GL_TRUE, invert the coverage value. See glSampleCoverage.
-        SampleCoverage => SAMPLE_COVERAGE,
+        // /// If enabled, the fragment's coverage is ANDed with the temporary coverage value. If GL_SAMPLE_COVERAGE_INVERT
+        // /// is set to GL_TRUE, invert the coverage value. See glSampleCoverage.
+        // SampleCoverage => SAMPLE_COVERAGE,
 
         // /// If enabled, perform a two-dimensional convolution operation using a separable convolution filter on incoming
         // /// RGBA color values. See glSeparableFilter2D.
@@ -448,9 +448,9 @@ gl_enum! {
         // /// function defined with glTexGen. Otherwise, the current t texture coordinate is used. See glTexGen.
         // TextureGenT => TEXTURE_GEN_T,
 
-        /// If enabled and a vertex shader is active, then the derived point size is taken from the (potentially
-        /// clipped) shader builtin gl_PointSize and clamped to the implementation-dependent point size range.
-        VertexProgramPointSize => VERTEX_PROGRAM_POINT_SIZE,
+        // /// If enabled and a vertex shader is active, then the derived point size is taken from the (potentially
+        // /// clipped) shader builtin gl_PointSize and clamped to the implementation-dependent point size range.
+        // VertexProgramPointSize => VERTEX_PROGRAM_POINT_SIZE,
 
         // /// If enabled and a vertex shader is active, it specifies that the GL will choose between front and back colors
         // /// based on the polygon's face direction of which the vertex being shaded is a part. It has no effect on points

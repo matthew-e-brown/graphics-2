@@ -1,19 +1,19 @@
 /// Vectors and matrices; "base" data structures that [higher-level abstractions][mod@transforms] are built on top of.
 mod base;
 
-/// Higher-level abstractions built on top of [vectors and matrices][mod@base].
-///
-/// This includes:
-///
-/// - Points in 3D space, built on top of 3D vectors, but with a homogenous coordinate `w` of exactly `1`.
-/// - Transformation matrices, built on top of 4D matrices, but with a fourth row of `[0 0 0 1]`.
-mod transforms;
+// /// Higher-level abstractions built on top of [vectors and matrices][mod@base].
+// ///
+// /// This includes:
+// ///
+// /// - Points in 3D space, built on top of 3D vectors, but with a homogenous coordinate `w` of exactly `1`.
+// /// - Transformation matrices, built on top of 4D matrices, but with a fourth row of `[0 0 0 1]`.
+// pub mod transforms;
 
-/// Models for geometric objects such as lines, planes, etc.
-pub mod geometry;
+// /// Models for geometric objects such as lines, planes, etc.
+// pub mod geometry;
+
 
 pub use base::*;
-pub use transforms::*;
 
 
 /// Removes a leading or trailing `+` token from a repeated sequence.

@@ -1,14 +1,32 @@
-pub mod errors;
+// pub mod errors;
+
 mod funcs;
 pub mod types;
 
-pub use funcs::*;
-
 
 /// Raw OpenGL bindings, generated from the specification.
-pub mod bindings {
+pub mod raw {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
+
+
+#[derive(Clone)]
+pub struct GLContext {
+    funcs: Rc<raw::GLFunctions>,
+}
+
+
+impl GLContext {
+    pub fn init<F>(loader_fn: F) -> Result<Self, &'static str>
+    where
+        F: FnMut(&'static str) -> *const core::ffi::c_void,
+    {
+        Ok(Self {
+            funcs: Rc::new(raw::GLFunctions::init(loader_fn)?),
+        })
+    }
+}
+
 
 /// Converts a Rust-native expression into a [GL-type][gl::types] with a `try_into`.
 ///
@@ -25,7 +43,7 @@ pub mod bindings {
 /// 3.  What error message to `.expect` with.
 ///
 /// ```
-/// let num_buffers = gl_convert!(n, GLsizei, "buffer creation count");
+/// let num_buffers = convert!(n, GLsizei, "buffer creation count");
 /// ```
 ///
 /// The third parameter is normally given simply as a name for the type, at which point the error message will be,
@@ -33,11 +51,11 @@ pub mod bindings {
 /// be provided by prefixing the third parameter with `msg:`:
 ///
 /// ```
-/// let size = gl_convert!(buffer.len(), GLsizeiptr, msg: "your buffer is too large!!");
+/// let size = convert!(buffer.len(), GLsizeiptr, msg: "your buffer is too large!!");
 /// ```
-macro_rules! gl_convert {
+macro_rules! convert {
     ($src:expr, $into:ty, $src_name:expr$(,)?) => {
-        $crate::gl_convert!(
+        $crate::convert!(
             $src,
             $into,
             msg: concat!($src_name, " should fit into a `", stringify!($into), "`"),
@@ -52,4 +70,6 @@ macro_rules! gl_convert {
     };
 }
 
-pub(crate) use gl_convert;
+use std::rc::Rc;
+
+pub(crate) use convert;

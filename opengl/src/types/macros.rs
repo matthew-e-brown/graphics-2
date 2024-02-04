@@ -4,11 +4,11 @@
 ///
 /// - `repr(transparent)`.
 /// - Derives for [`Debug`], [`Clone`], [`Copy`], [`PartialEq`], [`Eq`], and [`Hash`].
-/// - Functions for converting to/from raw [`gl::types::_`][gl::types] values.
+/// - Functions for converting to/from raw values.
 ///
 /// [`Hash`]: std::hash::Hash
 /// [`Debug`]: std::fmt::Debug
-macro_rules! gl_wrapper {
+macro_rules! gl_newtype {
     (
         $(#[$attr:meta])*
         $vis:vis struct $name:ident($inner:ty)$(;)?
@@ -21,27 +21,33 @@ macro_rules! gl_wrapper {
         impl $name {
             /// Wraps a raw value returned from an OpenGL binding.
             #[allow(unused)]
-            pub(crate) fn new(raw: $inner) -> Self {
-                Self(raw)
+            pub(crate) const fn new(inner: $inner) -> Self {
+                Self(inner)
             }
 
             /// Returns the raw value of this struct, to be passed to the raw OpenGL bindings.
             #[allow(unused)]
-            pub(crate) fn raw(&self) -> $inner {
+            pub(crate) const fn into_raw(self) -> $inner {
                 self.0
+            }
+        }
+
+        impl Into<$inner> for $name {
+            fn into(self) -> $inner {
+                self.into_raw()
             }
         }
     };
 }
 
 
-/// Declares a Rust enum with fields that map to specific [`GLenum`] values.
+/// Declares a Rust enum with fields that map to specific `GLenum` values.
 ///
 /// Enums are automatically declared with:
 ///
-/// - `repr(u32)`, which matches `GLenum` (which is specifically "unsigned int").
+/// - `repr(u32)`, which matches `GLenum`.
 /// - Derives for [`Debug`], [`Clone`], [`Copy`], [`PartialEq`], [`Eq`], and [`Hash`].
-/// - Functions for converting to/from raw [`gl::types::_`][gl::types] values.
+/// - Functions for converting to/from raw values.
 ///
 /// # Syntax
 ///
@@ -66,7 +72,6 @@ macro_rules! gl_wrapper {
 ///
 /// [`Hash`]: std::hash::Hash
 /// [`Debug`]: std::fmt::Debug
-/// [`GLenum`]: gl::types::GLenum
 macro_rules! gl_enum {
     // Empty cases to stop errors before typing any of the variants
     // -----------------------------------------------------------------------------------------------------------------
@@ -95,24 +100,31 @@ macro_rules! gl_enum {
         $vis enum $enum_name {
             $(
                 $(#[$field_attrs])*
-                $field_name = gl::$gl_name,
+                $field_name = crate::raw::$gl_name.into_raw(),
             )*
         }
 
         impl $enum_name {
             #[allow(unused)]
-            pub(crate) const fn raw(&self) -> gl::types::GLenum {
+            pub(crate) const fn into_raw(&self) -> u32 {
                 // SAFETY: enums are `repr(u32)`:
                 // https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
-                unsafe { *(self as *const Self as *const gl::types::GLenum) }
+                unsafe { *(self as *const $enum_name as *const u32) }
             }
 
             #[allow(unused)]
-            pub(crate) const fn from_raw(value: gl::types::GLenum) -> Option<Self> {
-                match value {
-                    $( gl::$gl_name => Some(Self::$field_name), )*
+            pub(crate) const fn from_raw(value: u32) -> Option<Self> {
+                // SAFETY: unchecked conversion isn't unsafe because we're checking it right now :)
+                match unsafe { crate::raw::types::GLEnum::from_raw(value) } {
+                    $( crate::raw::$gl_name => Some(Self::$field_name), )*
                     _ => None,
                 }
+            }
+        }
+
+        impl Into<crate::raw::types::GLEnum> for $enum_name {
+            fn into(self) -> crate::raw::types::GLEnum {
+                unsafe { crate::raw::types::GLEnum::from_raw(self.into_raw()) }
             }
         }
 
@@ -127,13 +139,13 @@ macro_rules! gl_enum {
 }
 
 
-/// Declares a Rust struct that wraps a [`GLbitfield`] value to be used for passing bit-flags.
+/// Declares a Rust struct that wraps a `GLbitfield` value to be used for passing bit-flags.
 ///
 /// Structs are automatically declared with:
 ///
 /// - All bitwise operations, including a bitwise implementation of [`Not`][std::ops::Not].
 /// - Derives for [`Debug`], [`Clone`], [`Copy`], [`PartialEq`], [`Eq`], and [`Hash`].
-/// - Functions for converting to/from raw [`gl::types::_`][gl::types] values.
+/// - Functions for converting to/from raw values.
 ///
 /// # Syntax
 ///
@@ -152,7 +164,6 @@ macro_rules! gl_enum {
 ///
 /// [`Hash`]: std::hash::Hash
 /// [`Debug`]: std::fmt::Debug
-/// [`GLbitfield`]: gl::types::GLbitfield
 macro_rules! gl_bitfield {
     () => ();
     // -----------------------------------------------------------------------------------------------------------------
@@ -168,25 +179,25 @@ macro_rules! gl_bitfield {
         $(#[$struct_attrs])*
         #[repr(transparent)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-        $vis struct $struct_name(gl::types::GLbitfield);
+        $vis struct $struct_name(u32);
 
         impl $struct_name {
             $(
                 $(#[$const_attrs])*
-                pub const $const_name: $struct_name = $struct_name(gl::$gl_name);
+                pub const $const_name: $struct_name = $struct_name(crate::raw::$gl_name.into_raw());
             )*
 
-            #[doc="Returns a set of all defined flags."]
+            /// Returns a set of all defined flags.
             pub const fn all() -> Self {
                 Self( $(Self::$const_name.0|)* 0 )
             }
 
-            #[doc="Returns an empty set of flags."]
+            /// Returns an empty set of flags.
             pub const fn none() -> Self {
                 Self( 0 )
             }
 
-            #[doc="Returns `true` if every one of `other`'s flags are present in `self`."]
+            /// Returns `true` if every one of `other`'s flags are present in `self`.
             pub const fn contains(&self, other: Self) -> bool {
                 // all of `other` is in `self` if masking `self` to only contain `other`'s bits gives us `other`.
                 (self.0 & other.0) == other.0
@@ -195,20 +206,26 @@ macro_rules! gl_bitfield {
 
         impl $struct_name {
             #[allow(unused)]
-            pub(crate) const fn raw(&self) -> gl::types::GLbitfield {
+            pub(crate) const fn into_raw(&self) -> u32 {
                 self.0
             }
 
             #[allow(unused)]
-            pub(crate) const fn from_raw(value: gl::types::GLbitfield) -> Option<Self> {
+            pub(crate) const fn from_raw(value: u32) -> Option<Self> {
                 // Mask `value` to only include bytes from this bitfield
-                let masked = value & Self::all().raw();
+                let masked = value & Self::all().into_raw();
                 // If we didn't lose any bits doing so, then this is a proper set of our bits
                 if masked == value {
                     Some(Self(value))
                 } else {
                     None
                 }
+            }
+        }
+
+        impl Into<crate::raw::types::GLBitfield> for $struct_name {
+            fn into(self) -> crate::raw::types::GLBitfield {
+                unsafe { crate::raw::types::GLBitfield::from_raw(self.into_raw()) }
             }
         }
 
@@ -224,7 +241,6 @@ macro_rules! gl_bitfield {
                 f.debug_tuple(stringify!($struct_name)).field(&fields).finish()
             }
         }
-
 
         impl std::ops::Not for $struct_name {
             type Output = $struct_name;
@@ -267,7 +283,7 @@ macro_rules! gl_bitfield {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: $struct_name) -> Self::Output {
-                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(u32::$op_func(self.0, rhs.0))
             }
         }
 
@@ -276,7 +292,7 @@ macro_rules! gl_bitfield {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: &'rhs $struct_name) -> Self::Output {
-                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(u32::$op_func(self.0, rhs.0))
             }
         }
 
@@ -285,7 +301,7 @@ macro_rules! gl_bitfield {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: $struct_name) -> Self::Output {
-                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(u32::$op_func(self.0, rhs.0))
             }
         }
 
@@ -294,7 +310,7 @@ macro_rules! gl_bitfield {
             type Output = $struct_name;
 
             fn $op_func(self, rhs: &'rhs $struct_name) -> Self::Output {
-                $struct_name(<gl::types::GLbitfield>::$op_func(self.0, rhs.0))
+                $struct_name(u32::$op_func(self.0, rhs.0))
             }
         }
     };
@@ -302,25 +318,25 @@ macro_rules! gl_bitfield {
         // with owned
         impl std::ops::$op_trait<$struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: $struct_name) {
-                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                u32::$op_func(&mut self.0, rhs.0);
             }
         }
 
         // with ref
         impl<'rhs> std::ops::$op_trait<&'rhs $struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: &'rhs $struct_name) {
-                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                u32::$op_func(&mut self.0, rhs.0);
             }
         }
 
         // with mut
         impl<'rhs> std::ops::$op_trait<&'rhs mut $struct_name> for $struct_name {
             fn $op_func(&mut self, rhs: &'rhs mut $struct_name) {
-                <gl::types::GLbitfield>::$op_func(&mut self.0, rhs.0);
+                u32::$op_func(&mut self.0, rhs.0);
             }
         }
     };
 }
 
 
-pub(super) use {gl_bitfield, gl_enum, gl_wrapper};
+pub(super) use {gl_bitfield, gl_enum, gl_newtype};
