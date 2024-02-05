@@ -7,7 +7,6 @@
 //! Eventually, a custom XML parser will probably be implemented. (Probably not until after this code is merged into
 //! [Gloog](https://github.com/matthew-e-brown/gloog), though).
 
-use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
@@ -65,74 +64,47 @@ unsafe fn str_to_static<'a>(str: &'a str) -> &'static str {
 }
 
 
-/// Converts an enum variant from `UPPER_SNAKE_CASE` into one that this crate can use.
-pub fn rename_enum_variant(ident: &str) -> Cow<'_, str> {
-    // FIXME: Once groups are sorted out, this'll need to convert to UpperCamelCase instead.
-    Cow::Borrowed(ident)
-}
-
-
-/// Converts a typename from how it appears in the raw OpenGL spec into one for usage by this crate.
+/// Maps a typename from how it appears in the raw OpenGL spec into one of the type aliases supported by this crate.
+/// Since this crate now uses its own aliases to map the OpenGL types back to Rust types, this will mostly just
+/// re-return the provided string---if it's a supported one.
 ///
 /// Panics if the given typename does not (yet) map to anything supported by this crate.
-///
-/// # A note on type aliases
-///
-/// The `gl` crate (which this crate is based on) uses the `os::raw::c_int` et. al. types for all of its integers. This
-/// is a sensible choice for FFI, of course. For this library, I've opted to simply use plain Rust types wherever
-/// possible, however; [OpenGL specifies all of its types with a specific bit-depth][opengl-types]. That is, OpenGL's
-/// types are strictly defined: a `GLint` is always "32 bits, 2's complement binary integer", so it is safe to use
-/// `i32`.
-///
-/// [opengl-types]: https://www.khronos.org/opengl/wiki/OpenGL_Type
 pub fn rename_xml_type(typename: &str) -> &'static str {
     // cspell:disable
-    #[rustfmt::skip]
     return match typename {
-        // Common types from OpenGL 1.1
-        "GLenum"            => "GLEnum",                        // super::__gl_imports::raw::c_uint;
-        "GLboolean"         => "bool",                          // super::__gl_imports::raw::c_uchar;
-        "GLbitfield"        => "GLBitfield",                    // super::__gl_imports::raw::c_uint;
-        "GLvoid"            => "c_void",                        // super::__gl_imports::raw::c_void;
-        "GLbyte"            => "i8",                            // super::__gl_imports::raw::c_char;
-        "GLshort"           => "i16",                           // super::__gl_imports::raw::c_short;
-        "GLint"             => "i32",                           // super::__gl_imports::raw::c_int;
-        "GLclampx"          => "i32",                           // super::__gl_imports::raw::c_int;
-        "GLubyte"           => "u8",                            // super::__gl_imports::raw::c_uchar;
-        "GLushort"          => "u16",                           // super::__gl_imports::raw::c_ushort;
-        "GLuint"            => "u32",                           // super::__gl_imports::raw::c_uint;
-        "GLsizei"           => "i32",                           // super::__gl_imports::raw::c_int;
-        "GLfloat"           => "f32",                           // super::__gl_imports::raw::c_float;
-        "GLclampf"          => "f32",                           // super::__gl_imports::raw::c_float;
-        "GLdouble"          => "f64",                           // super::__gl_imports::raw::c_double;
-        "GLclampd"          => "f64",                           // super::__gl_imports::raw::c_double;
-        "GLeglImageOES"     => "*const c_void",                 // *const super::__gl_imports::raw::c_void;
-        "GLchar"            => "i8",                            // super::__gl_imports::raw::c_char;
-        "GLcharARB"         => "i8",                            // super::__gl_imports::raw::c_char;
-        // -----------------------------------------------------------------------------------------
-        #[cfg(target_os = "macos")]      "GLhandleARB" => "*const c_void",  // *const super::__gl_imports::raw::c_void;
-        #[cfg(not(target_os = "macos"))] "GLhandleARB" => "u32",            // super::__gl_imports::raw::c_uint;
-        "GLhalfARB"         => "u16",                           // super::__gl_imports::raw::c_ushort;
-        "GLhalf"            => "u16",                           // super::__gl_imports::raw::c_ushort;
-        "GLfixed"           => "i32",                           // GLint; (Must be 32 bits)
-        "GLintptr"          => "isize",                         // isize;
-        "GLsizeiptr"        => "isize",                         // isize;
-        "GLint64"           => "i64",                           // i64;
-        "GLuint64"          => "u64",                           // u64;
-        "GLintptrARB"       => "isize",                         // isize;
-        "GLsizeiptrARB"     => "isize",                         // isize;
-        "GLint64EXT"        => "i64",                           // i64;
-        "GLuint64EXT"       => "u64",                           // u64;
-        "GLsync"            => "*const types::GLSync",          // *const __GLsync; (with `pub enum GLSync {}` above it)
-        // Vendor extension types
-        "GLhalfNV"          => "u16",                           // super::__gl_imports::raw::c_ushort;
-        "GLvdpauSurfaceNV"  => "isize",                         // GLintptr;
-        // -----------------------------------------------------------------------------------------
-        "GLDEBUGPROC"       => "types::GLDebugProc",
-        "GLDEBUGPROCARB"    => "types::GLDebugProc",
-        "GLDEBUGPROCKHR"    => "types::GLDebugProc",
-        "GLDEBUGPROCAMD"    => "types::GLDebugProc_AMD",
-        _ => unimplemented!("unknown type: {typename}"),
+        // Map known values just back to themselves (but with static lifetime)
+        "GLboolean" => "GLboolean",
+        "GLbyte" => "GLbyte",
+        "GLubyte" => "GLubyte",
+        "GLchar" => "GLchar",
+        "GLshort" => "GLshort",
+        "GLushort" => "GLushort",
+        "GLint" => "GLint",
+        "GLuint" => "GLuint",
+        "GLfixed" => "GLfixed",
+        "GLint64" => "GLint64",
+        "GLuint64" => "GLuint64",
+        "GLsizei" => "GLsizei",
+        "GLenum" => "GLenum",
+        "GLintptr" => "GLintptr",
+        "GLsizeiptr" => "GLsizeiptr",
+        "GLsync" => "GLsync",
+        "GLbitfield" => "GLbitfield",
+        "GLhalf" => "GLhalf",
+        "GLfloat" => "GLfloat",
+        "GLclampf" => "GLclampf",
+        "GLdouble" => "GLdouble",
+        "GLclampd" => "GLclampd",
+        // We don't use the `GLvoid` type, may as well just use
+        "GLvoid" => "core::ffi::c_void",
+        "GLDEBUGPROC" => "types::GLDebugProc",
+        "GLDEBUGPROCARB" => "types::GLDebugProc",
+        "GLDEBUGPROCKHR" => "types::GLDebugProc",
+        "GLDEBUGPROCAMD" => "types::GLDebugProc_AMD",
+        other if other.ends_with("NV") => rename_xml_type(&other[..other.len() - 2]),
+        other if other.ends_with("ARB") => rename_xml_type(&other[..other.len() - 3]),
+        other if other.ends_with("EXT") => rename_xml_type(&other[..other.len() - 3]),
+        other => unimplemented!("unsupported typename: {other}"),
     };
     // cspell:enable
 }
