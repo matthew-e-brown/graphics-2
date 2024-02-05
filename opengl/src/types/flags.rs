@@ -1,4 +1,4 @@
-use super::macros::gl_bitfield;
+use crate::macros::gl_bitfield;
 
 
 gl_bitfield! {

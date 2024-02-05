@@ -1,13 +1,15 @@
 use std::ffi::CString;
 
-use crate::raw::{COMPILE_STATUS, INFO_LOG_LENGTH, LINK_STATUS};
+use crate::bindings::types::*;
+use crate::bindings::{COMPILE_STATUS, INFO_LOG_LENGTH, LINK_STATUS};
 use crate::types::*;
 use crate::{convert, GLContext};
 
 impl GLContext {
     pub fn create_shader(&self, shader_type: ShaderType) -> ShaderID {
-        ShaderID::new(unsafe { self.funcs.create_shader(shader_type.into()) })
+        ShaderID::new(unsafe { self.gl.create_shader(shader_type.into_raw()) })
     }
+
 
     pub fn shader_source<I, S>(&self, shader: ShaderID, strings: I)
     where
@@ -25,22 +27,23 @@ impl GLContext {
         for s in strings {
             let str = s.as_ref();
             let ptr = str.as_bytes().as_ptr().cast();
-            let len = convert!(str.len(), i32, "shader source string size");
+            let len = convert!(str.len(), GLint, "shader source string size");
 
             ptrs.push(ptr);
             lens.push(len);
             count += 1;
         }
 
-        let count = convert!(count, i32, "number of shader source strings");
-        unsafe { self.funcs.shader_source(shader.into(), count, ptrs.as_ptr(), lens.as_ptr()) }
+        let count = convert!(count, GLsizei, "number of shader source strings");
+        unsafe { self.gl.shader_source(shader.into_raw(), count, ptrs.as_ptr(), lens.as_ptr()) }
     }
+
 
     pub fn compile_shader(&self, shader: ShaderID) -> Result<(), String> {
         let success = unsafe {
             let mut result = 0;
-            self.funcs.compile_shader(shader.into());
-            self.funcs.get_shader_iv(shader.into(), COMPILE_STATUS, &mut result);
+            self.gl.compile_shader(shader.into_raw());
+            self.gl.get_shader_iv(shader.into_raw(), COMPILE_STATUS, &mut result);
             result != 0
         };
 
@@ -54,9 +57,10 @@ impl GLContext {
         }
     }
 
+
     pub fn get_shader_info_log(&self, shader: ShaderID) -> Option<String> {
         let mut log_size = 0;
-        unsafe { self.funcs.get_shader_iv(shader.into(), INFO_LOG_LENGTH, &mut log_size) };
+        unsafe { self.gl.get_shader_iv(shader.into_raw(), INFO_LOG_LENGTH, &mut log_size) };
 
         if log_size <= 0 {
             return None;
@@ -68,38 +72,39 @@ impl GLContext {
         unsafe {
             let buf_ptr = buffer.as_mut_ptr().cast();
             let len_ptr = std::ptr::null_mut();
-            self.funcs.get_shader_info_log(shader.into(), log_size, len_ptr, buf_ptr);
+            self.gl.get_shader_info_log(shader.into_raw(), log_size, len_ptr, buf_ptr);
         }
 
         let str = String::from_utf8_lossy(&buffer);
         Some(str.into())
     }
 
+
     pub fn create_program(&self) -> ProgramID {
-        ProgramID::new(unsafe { self.funcs.create_program() })
+        ProgramID::new(unsafe { self.gl.create_program() })
     }
 
 
     pub fn attach_shader(&self, program: ProgramID, shader: ShaderID) {
-        unsafe { self.funcs.attach_shader(program.into(), shader.into()) }
+        unsafe { self.gl.attach_shader(program.into_raw(), shader.into_raw()) }
     }
 
 
     pub fn detach_shader(&self, program: ProgramID, shader: ShaderID) {
-        unsafe { self.funcs.detach_shader(program.into(), shader.into()) }
+        unsafe { self.gl.detach_shader(program.into_raw(), shader.into_raw()) }
     }
 
 
     pub fn delete_shader(&self, shader: ShaderID) {
-        unsafe { self.funcs.delete_shader(shader.into()) }
+        unsafe { self.gl.delete_shader(shader.into_raw()) }
     }
 
 
     pub fn link_program(&self, program: ProgramID) -> Result<(), String> {
         let success = unsafe {
             let mut status = 0;
-            self.funcs.link_program(program.into());
-            self.funcs.get_program_iv(program.into(), LINK_STATUS, &mut status);
+            self.gl.link_program(program.into_raw());
+            self.gl.get_program_iv(program.into_raw(), LINK_STATUS, &mut status);
             status != 0
         };
 
@@ -116,7 +121,7 @@ impl GLContext {
 
     pub fn get_program_info_log(&self, program: ProgramID) -> Option<String> {
         let mut log_size = 0;
-        unsafe { self.funcs.get_program_iv(program.into(), INFO_LOG_LENGTH, &mut log_size) };
+        unsafe { self.gl.get_program_iv(program.into_raw(), INFO_LOG_LENGTH, &mut log_size) };
 
         if log_size <= 0 {
             return None;
@@ -128,7 +133,7 @@ impl GLContext {
         unsafe {
             let buf_ptr = buffer.as_mut_ptr().cast();
             let len_ptr = std::ptr::null_mut();
-            self.funcs.get_program_info_log(program.into(), log_size, len_ptr, buf_ptr);
+            self.gl.get_program_info_log(program.into_raw(), log_size, len_ptr, buf_ptr);
         }
 
         let str = String::from_utf8_lossy(&buffer);
@@ -137,12 +142,12 @@ impl GLContext {
 
 
     pub fn use_program(&self, program: ProgramID) {
-        unsafe { self.funcs.use_program(program.into()) }
+        unsafe { self.gl.use_program(program.into_raw()) }
     }
 
 
     pub fn delete_program(&self, program: ProgramID) {
-        unsafe { self.funcs.delete_program(program.into()) }
+        unsafe { self.gl.delete_program(program.into_raw()) }
     }
 
 
@@ -172,15 +177,15 @@ impl GLContext {
             count += 1;
         }
 
-        let count = convert!(count, i32, "number of shader source strings");
+        let count = convert!(count, GLsizei, "number of shader source strings");
         let str_ptrs = str_ptrs.as_ptr().cast();
 
-        let program = unsafe { self.funcs.create_shader_program_v(shader_type.into(), count, str_ptrs) };
+        let program = unsafe { self.gl.create_shader_program_v(shader_type.into_raw(), count, str_ptrs) };
         let program = ProgramID::new(program);
 
         let success = unsafe {
             let mut status = 0;
-            self.funcs.get_program_iv(program.into(), LINK_STATUS, &mut status);
+            self.gl.get_program_iv(program.into_raw(), LINK_STATUS, &mut status);
             status != 0
         };
 

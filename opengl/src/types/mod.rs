@@ -1,14 +1,13 @@
 mod enums;
 mod flags;
-mod macros;
 
 pub use self::enums::*;
 pub use self::flags::*;
-use self::macros::gl_newtype;
+use crate::bindings::types::*;
+use crate::macros::gl_newtype;
 
-
-gl_newtype!(pub struct BufferID(u32));
-gl_newtype!(pub struct ShaderID(u32));
-gl_newtype!(pub struct ProgramID(u32));
-gl_newtype!(pub struct VertexArrayID(u32));
-gl_newtype!(pub struct UniformLocation(i32));
+gl_newtype!(pub struct BufferID(GLuint));
+gl_newtype!(pub struct ShaderID(GLuint));
+gl_newtype!(pub struct ProgramID(GLuint));
+gl_newtype!(pub struct VertexArrayID(GLuint));
+gl_newtype!(pub struct UniformLocation(GLint));

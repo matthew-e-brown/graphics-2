@@ -1,4 +1,4 @@
-use super::macros::gl_enum;
+use crate::macros::gl_enum;
 
 
 gl_enum! {
