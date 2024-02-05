@@ -11,7 +11,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
-use convert_case::{Case, Casing};
+use convert_case::{Boundary, Case, Casing};
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -333,6 +333,15 @@ pub fn rename_parameter(ident: &str) -> &'static str {
             ("attribindex", "attrib_index"),
             ("relativeoffset", "relative_offset"),
             ("bindingindex", "binding_index"),
+            ("renderbuffertarget", "renderbuffer_target"),
+            ("bufsize", "buf_size"),
+            ("origtexture", "orig_texture"),
+            ("sfactor", "s_factor"),
+            ("dfactor", "d_factor"),
+            ("sfactorRGB", "s_factor_rgb"),
+            ("dfactorRGB", "d_factor_rgb"),
+            ("sfactorAlpha", "s_factor_alpha"),
+            ("dfactorAlpha", "d_factor_alpha"),
             // cspell:enable
         ].into_iter().map(|(k, v)| (k.to_owned(), v.to_owned()))))); // ((((((lol))))))
     }
@@ -344,12 +353,16 @@ pub fn rename_parameter(ident: &str) -> &'static str {
     } else {
         std::mem::drop(cache); // drop lock
 
+        let new_ident = ident
+            .with_boundaries(&[Boundary::LowerUpper, Boundary::Underscore])
+            .to_case(Case::Snake);
+
         let mut cache = CACHE.write().unwrap();
         let Entry::Vacant(vacant) = cache.entry(ident.to_owned()) else {
             unreachable!()
         };
 
-        let inserted = vacant.insert(ident.to_case(Case::Snake)).as_str();
+        let inserted = vacant.insert(new_ident).as_str();
         // SAFETY: see function docs
         unsafe { str_to_static(inserted) }
     }

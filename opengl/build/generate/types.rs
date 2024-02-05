@@ -2,24 +2,24 @@ use std::collections::BTreeSet;
 use std::io::{self, Write};
 
 use gl_generator::Registry;
-use indoc::indoc;
+use indoc::writedoc;
 
 
 pub fn write_types_module(dest: &mut impl Write) -> io::Result<()> {
     #[rustfmt::skip]
-    dest.write_all(indoc! {r#"
-        pub mod types {
+    return writedoc!(dest, r#"
+        pub mod types {{
             // Opaque types, used as pointees in some other type definitions.
             // -----------------------------------------------------------------------------
 
             /// Opaque type. Used as a pointee.
-            pub enum GLSyncHandle {}
+            pub enum GLSyncHandle {{}}
 
             /// Opaque type. Compatible with OpenCL `cl_context`.
-            pub enum CLContext {}
+            pub enum CLContext {{}}
 
             /// Opaque type. Compatible with OpenCL `cl_event`.
-            pub enum CLEvent {}
+            pub enum CLEvent {{}}
 
             // Standard type aliases
             // -----------------------------------------------------------------------------
@@ -98,9 +98,8 @@ pub fn write_types_module(dest: &mut impl Write) -> io::Result<()> {
                 message: *const GLchar,
                 user_param: *mut core::ffi::c_void,
             )>;
-        }
-    "#}.as_bytes())?;
-    writeln!(dest)
+        }}
+    "#);
 }
 
 

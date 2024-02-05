@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 
 use gl_generator::{Api, Binding, Cmd, Registry};
-use indoc::indoc;
+use indoc::{indoc, writedoc};
 
 use crate::rename::{rename_function, rename_lib_type, rename_parameter};
 
@@ -11,58 +11,15 @@ use crate::rename::{rename_function, rename_lib_type, rename_parameter};
 const STRUCT_NAME: &'static str = "GLFunctions";
 
 
-fn make_params(bindings: &[Binding]) -> String {
-    bindings
-        .iter()
-        .map(|binding| {
-            let ident = rename_parameter(&binding.ident);
-            let ty = rename_lib_type(&binding.ty);
-            format!("{}: {}", ident, ty)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn make_args(bindings: &[Binding]) -> String {
-    bindings
-        .iter()
-        .map(|binding| rename_parameter(&binding.ident))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn make_fn_ptr(cmd: &Cmd) -> String {
-    let mut result = String::from("extern \"system\" fn(");
-
-    let ret_ty = rename_lib_type(&cmd.proto.ty);
-    let params = cmd
-        .params
-        .iter()
-        .map(|binding| rename_lib_type(&binding.ty))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    result += &params;
-    result += ")";
-
-    if ret_ty != "()" {
-        result += " -> ";
-        result += &ret_ty;
-    }
-
-    result
-}
-
-
 pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    #[rustfmt::skip]
-    write!(dest, indoc! {r#"
-        #[allow(unused_imports)] use core::mem::transmute;
-        #[allow(dead_code)] type VoidPtr = *const core::ffi::c_void;
-
-        /// A collection of loaded OpenGL function pointers.
-        pub struct {struct_name} {{
-    "#}, struct_name = STRUCT_NAME)?;
+    writedoc!(
+        dest,
+        r#"
+            /// A collection of loaded OpenGL function pointers.
+            pub struct {} {{
+        "#,
+        STRUCT_NAME
+    )?;
 
     for cmd in &registry.cmds {
         writeln!(dest, "    {new_name}: VoidPtr,", new_name = rename_function(&cmd.proto.ident))?;
@@ -76,21 +33,23 @@ pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Resu
 pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
-    #[rustfmt::skip]
-    write!(dest, indoc! {r#"
-        /// Load all `OpenGL` function pointers using the given function to load function pointers.
-        ///
-        /// ```ignore
-        /// let gl = {struct_name}::init(|f| glfw.get_proc_address(f));
-        /// ```
-        ///
-        /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
-        /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
-        /// return a non-null pointer after attempting all fallbacks.
-    "#}, struct_name = STRUCT_NAME)?;
+    writedoc!(
+        dest,
+        r#"
+            /// Load all `OpenGL` function pointers using the given function to load function pointers.
+            ///
+            /// ```ignore
+            /// let gl = {}::init(|f| glfw.get_proc_address(f));
+            /// ```
+            ///
+            /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
+            /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
+            /// return a non-null pointer after attempting all fallbacks.
+        "#,
+        STRUCT_NAME
+    )?;
 
-    #[rustfmt::skip]
-    dest.write_all(indoc! {r#"
+    let init_fn_str = indoc! {r#"
         pub fn init(mut loader_fn: impl FnMut(&'static str) -> *const c_void) -> Result<Self, &'static str> {
             /// Loads an OpenGL function from its symbol name, falling back to the ones in the list (in order) if it
             /// can't be found.
@@ -116,7 +75,9 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
             }
 
             Ok(Self {
-    "#}.as_bytes())?;
+    "#};
+
+    dest.write_all(init_fn_str.as_bytes())?;
 
     // Now, load them all!!
     for cmd in &registry.cmds {
@@ -136,11 +97,9 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
             .aliases
             .get(raw_name)
             .and_then(|aliases| {
-                // Surround each with quotes and a comma
+                // Surround each with `"...",` --> surround the whole thing with `&[...]` --> collect into a string
                 let names = aliases.iter().flat_map(|alias| ["\"", &alias[..], "\","].into_iter());
-                // Then surround the entire iterator with &[]
                 let bits = Some("&[").into_iter().chain(names).chain(Some("]").into_iter());
-                // Then collect the entire thing into a single string
                 Some(Cow::Owned(bits.collect()))
             })
             .unwrap_or("&[]".into());
@@ -155,12 +114,24 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
 
 
 pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    writeln!(dest, "impl {STRUCT_NAME} {{")?;
+    // Doesn't need any `write!` formatting
+    let macro_str = indoc! {r#"
+        /// Casts (transmutes) a void pointer into a function pointer with the given arguments and
+        macro_rules! cast {
+            ($self:ident.$name:ident($($p_ty:ty),*) -> $r_ty:ty) => {
+                // SAFETY: the functions doing this transmute are all unsafe; it's up to the caller to
+                ::core::mem::transmute::<VoidPtr, extern "system" fn($($p_ty),*) -> $r_ty>($self.$name)
+            };
+        }
+    "#};
+    dest.write_all(macro_str.as_bytes())?;
+
+    writeln!(dest, "\nimpl {STRUCT_NAME} {{")?;
 
     for cmd in &registry.cmds {
         let new_name = rename_function(&cmd.proto.ident);
         let ret_type = rename_lib_type(&cmd.proto.ty);
-        let fn_ptr = make_fn_ptr(&cmd);
+        let fn_cast = make_fn_cast(&cmd);
         let args = make_args(&cmd.params);
 
         write!(dest, "    pub unsafe fn {new_name}")?;
@@ -175,9 +146,42 @@ pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Resu
             write!(dest, " -> {ret_type}")?;
         }
 
-        writeln!(dest, " {{ (transmute::<VoidPtr, {fn_ptr}>(self.{new_name}))({args}) }}")?;
+        writeln!(dest, " {{ ({fn_cast})({args}) }}")?;
     }
 
     writeln!(dest, "}}")?; // Close impl
     Ok(())
+}
+
+
+fn make_params(bindings: &[Binding]) -> String {
+    bindings
+        .iter()
+        .map(|binding| {
+            let ident = rename_parameter(&binding.ident);
+            let ty = rename_lib_type(&binding.ty);
+            format!("{}: {}", ident, ty)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn make_args(bindings: &[Binding]) -> String {
+    bindings
+        .iter()
+        .map(|binding| rename_parameter(&binding.ident))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn make_fn_cast(cmd: &Cmd) -> String {
+    let ident = rename_function(&cmd.proto.ident);
+    let ret_ty = rename_lib_type(&cmd.proto.ty);
+    let params = cmd
+        .params
+        .iter()
+        .map(|binding| rename_lib_type(&binding.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("cast!(self.{ident}({params}) -> {ret_ty})")
 }
