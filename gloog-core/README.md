@@ -23,7 +23,7 @@ Further goals:
 - Work using types defined in [`gloog-math`](../gloog-math/README.md)
 - Some more stuff I'll remember when it isn't past midnight.
 
-> ![NOTE]
+> [!NOTE]
 >
 > It should be noted that this crate's _primary_ purpose is to supplement my
 > coursework for a computer graphics reading course. Its development is going to
