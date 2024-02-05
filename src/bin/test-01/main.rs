@@ -10,8 +10,7 @@ use std::mem::MaybeUninit;
 
 use bytemuck::cast_slice;
 use glfw::{Action, Context, Key, OpenGlProfileHint, SwapInterval, WindowEvent, WindowHint, WindowMode};
-use math::{Matrix4D as Mat4, Vector3D as Vec3};
-use opengl::types::{
+use gloog_core::types::{
     BufferTarget,
     BufferUsage,
     ClearMask,
@@ -21,7 +20,8 @@ use opengl::types::{
     ShaderType,
     VertexAttribType,
 };
-use opengl::GLContext;
+use gloog_core::GLContext;
+use gloog_math::{Mat4, Vec3};
 
 
 const POSITION_DATA: [Vec3; 8] = [
