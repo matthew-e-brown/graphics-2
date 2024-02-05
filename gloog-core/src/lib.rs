@@ -39,16 +39,13 @@ impl GLContext {
     /// For example, when using with GLFW:
     ///
     /// ```ignore
-    /// let gl = GLFunctions::init(|f| glfw.get_proc_address(f));
+    /// let gl = GLContext::init(|f| glfw.get_proc_address(f));
     /// ```
     ///
     /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
     /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
     /// return a non-null pointer after attempting all fallbacks.
-    pub fn init<F>(loader_fn: F) -> Result<Self, &'static str>
-    where
-        F: FnMut(&'static str) -> *const core::ffi::c_void,
-    {
+    pub fn init(loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void) -> Result<Self, &'static str> {
         Ok(Self {
             gl: Rc::new(bindings::GLFunctions::init(loader_fn)?),
         })

@@ -2,9 +2,9 @@ use std::mem::size_of;
 
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
-use math::Vector3D as Vec3;
-use opengl::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
-use opengl::GLContext;
+use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
+use gloog_core::GLContext;
+use gloog_math::Vector3D as Vec3;
 
 
 const VERTICES: [[Vec3; 2]; 3] = [

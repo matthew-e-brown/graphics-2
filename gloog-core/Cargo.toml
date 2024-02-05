@@ -1,14 +1,11 @@
 [package]
-name = "opengl"
+name = "gloog-core"
 version = "0.1.0"
 authors = ["Matthew Brown <matthew.e.brown.17@gmail.com>"]
 description = "A (hopefully) safe(-ish) wrapper around raw OpenGL bindings."
 edition = "2021"
+
 build = "./build/main.rs"
-
-
-[dependencies]
-thiserror = "1.0.43"
 
 
 [build-dependencies]

@@ -7,14 +7,14 @@ edition = "2021"
 
 
 [dependencies]
-# Local crates
-opengl = { version = "0.1.0", path = "./opengl" }
-math = { version = "0.1.0", path = "./math" }
-
-# Third-party deps
+gloog-core = { version = "0.1.0", path = "./gloog-core" }
+gloog-math = { version = "0.1.0", path = "./gloog-math" }
 bytemuck = "1.13.1"
 glfw = "0.52.0"
 
 
 [workspace]
-members = ["./opengl", "./math"]
+members = [
+    "./gloog-core",
+    "./gloog-math",
+]
