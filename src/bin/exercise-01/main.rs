@@ -4,7 +4,7 @@ use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
 use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
 use gloog_core::GLContext;
-use gloog_math::Vector3D as Vec3;
+use gloog_math::Vec3;
 
 
 const VERTICES: [[Vec3; 2]; 3] = [

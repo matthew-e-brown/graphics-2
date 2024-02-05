@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use super::Vector3D;
+use super::Vec3;
 
 
 /// A four-dimensional vector of 32-bit floats.
@@ -8,20 +8,20 @@ use super::Vector3D;
 /// This struct is `repr(C)`, so it is guaranteed to be identical to `[f32; 4]`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct Vector4D {
+pub struct Vec4 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
     pub w: f32,
 }
 
-super::impl_vector_basics!(Vector4D, f32, 4 (16), { 0: x, 1: y, 2: z, 3: w });
+super::impl_vector_basics!(Vec4, f32, 4 (16), { 0: x, 1: y, 2: z, 3: w });
 
-impl Vector4D {
-    pub const UNIT_X: Vector4D = Vector4D::new(1.0, 0.0, 0.0, 0.0);
-    pub const UNIT_Y: Vector4D = Vector4D::new(0.0, 1.0, 0.0, 0.0);
-    pub const UNIT_Z: Vector4D = Vector4D::new(0.0, 0.0, 1.0, 0.0);
-    pub const UNIT_W: Vector4D = Vector4D::new(0.0, 0.0, 0.0, 1.0);
+impl Vec4 {
+    pub const UNIT_X: Vec4 = Vec4::new(1.0, 0.0, 0.0, 0.0);
+    pub const UNIT_Y: Vec4 = Vec4::new(0.0, 1.0, 0.0, 0.0);
+    pub const UNIT_Z: Vec4 = Vec4::new(0.0, 0.0, 1.0, 0.0);
+    pub const UNIT_W: Vec4 = Vec4::new(0.0, 0.0, 0.0, 1.0);
 
     // --------------------------------------------------------------------------------------------
 
@@ -29,7 +29,7 @@ impl Vector4D {
     ///
     /// See also: [`Vector3D::to4`].
     #[inline]
-    pub const fn from3(xyz: Vector3D, w: f32) -> Vector4D {
-        Vector4D::new(xyz.x, xyz.y, xyz.z, w)
+    pub const fn from3(xyz: Vec3, w: f32) -> Vec4 {
+        Vec4::new(xyz.x, xyz.y, xyz.z, w)
     }
 }

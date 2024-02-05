@@ -21,7 +21,7 @@ use gloog_core::types::{
     VertexAttribType,
 };
 use gloog_core::GLContext;
-use gloog_math::{Matrix4D as Mat4, Vector3D as Vec3};
+use gloog_math::{Mat4, Vec3};
 
 
 const POSITION_DATA: [Vec3; 8] = [

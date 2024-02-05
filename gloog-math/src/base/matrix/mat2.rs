@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use crate::Vector2D;
+use crate::Vec2;
 
 
 /// A 2×2 matrix of 32-bit floats.
@@ -8,14 +8,14 @@ use crate::Vector2D;
 /// This struct is `repr(C)`, so it is guaranteed to be identical to `[[f32; 2]; 2]` or `[f32; 4]`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct Matrix2D {
+pub struct Mat2 {
     m: [[f32; 2]; 2],
 }
 
 
 #[rustfmt::skip]
-super::impl_matrix_basics!(Matrix2D, f32, 2 * 2 (16 bytes), {
-    col_type: Vector2D,
+super::impl_matrix_basics!(Mat2, f32, 2 * 2 (16 bytes), {
+    col_type: Vec2,
     col_order: [
         c0/C0/0: [n00: (0, 0), n10: (0, 1)] / [r0, r1],
         c1/C1/1: [n01: (1, 0), n11: (1, 1)] / [r0, r1],
@@ -29,8 +29,8 @@ super::impl_matrix_basics!(Matrix2D, f32, 2 * 2 (16 bytes), {
 
 
 #[rustfmt::skip]
-crate::operator!(* |a: &Matrix2D, b: &Matrix2D| -> Matrix2D {
-    Matrix2D::new(
+crate::operator!(* |a: &Mat2, b: &Mat2| -> Mat2 {
+    Mat2::new(
         /* row 0 -------------------------------------------------- */
             /* col 0 */ (a[[0,0]] * b[[0,0]]) + (a[[0,1]] * b[[1,0]]),
             /* col 1 */ (a[[0,0]] * b[[0,1]]) + (a[[0,1]] * b[[1,1]]),
@@ -41,18 +41,18 @@ crate::operator!(* |a: &Matrix2D, b: &Matrix2D| -> Matrix2D {
 });
 
 #[rustfmt::skip]
-crate::operator!(* |a: &Matrix2D, b: &Vector2D| -> Vector2D {
-    Vector2D::new(
+crate::operator!(* |a: &Mat2, b: &Vec2| -> Vec2 {
+    Vec2::new(
         a[0][0] * b.x   +   a[1][0] * b.y,
         a[0][1] * b.x   +   a[1][1] * b.y,
     )
 });
 
 
-impl Matrix2D {
+impl Mat2 {
     /// The 2×2 identity matrix.
     #[rustfmt::skip]
-    pub const IDENTITY: Matrix2D = Matrix2D::new(
+    pub const IDENTITY: Mat2 = Mat2::new(
         1.0, 0.0,
         0.0, 1.0,
     );
@@ -60,8 +60,8 @@ impl Matrix2D {
     /// Computes a new matrix which is this matrix's transpose.
     #[inline]
     #[rustfmt::skip]
-    pub fn transpose(&self) -> Matrix2D {
-        Matrix2D::new(
+    pub fn transpose(&self) -> Mat2 {
+        Mat2::new(
             self[[0, 0]], self[[1, 0]],
             self[[0, 1]], self[[1, 1]],
         )
@@ -78,11 +78,11 @@ impl Matrix2D {
     /// In the interest of performance, there is no check for whether or not this matrix is invertible (if its
     /// determinant of zero).
     #[rustfmt::skip]
-    pub fn inverse(&self) -> Matrix2D {
+    pub fn inverse(&self) -> Mat2 {
         let inv_det = 1.0 / self.det();
         let inv_neg = -inv_det;
 
-        Matrix2D::new(
+        Mat2::new(
             inv_det * self[[1, 1]], inv_neg * self[[0, 1]],
             inv_neg * self[[1, 0]], inv_det * self[[0, 0]],
         )

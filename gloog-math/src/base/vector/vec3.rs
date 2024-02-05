@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use super::{Vector2D, Vector4D};
+use super::{Vec2, Vec4};
 
 
 /// A three-dimensional vector of 32-bit floats.
@@ -8,23 +8,23 @@ use super::{Vector2D, Vector4D};
 /// This struct is `repr(C)`, so it is guaranteed to be identical to `[f32; 3]`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct Vector3D {
+pub struct Vec3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
 }
 
-super::impl_vector_basics!(Vector3D, f32, 3 (12), { 0: x, 1: y, 2: z });
+super::impl_vector_basics!(Vec3, f32, 3 (12), { 0: x, 1: y, 2: z });
 
-impl Vector3D {
-    pub const UNIT_X: Vector3D = Vector3D::new(1.0, 0.0, 0.0);
-    pub const UNIT_Y: Vector3D = Vector3D::new(0.0, 1.0, 0.0);
-    pub const UNIT_Z: Vector3D = Vector3D::new(0.0, 0.0, 1.0);
+impl Vec3 {
+    pub const UNIT_X: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+    pub const UNIT_Y: Vec3 = Vec3::new(0.0, 1.0, 0.0);
+    pub const UNIT_Z: Vec3 = Vec3::new(0.0, 0.0, 1.0);
 
     /// Computes the cross product between this and another vector.
     #[inline]
-    pub fn cross(&self, rhs: &Vector3D) -> Vector3D {
-        Vector3D {
+    pub fn cross(&self, rhs: &Vec3) -> Vec3 {
+        Vec3 {
             x: self.y * rhs.z - self.z * rhs.y,
             y: self.z * rhs.x - self.x * rhs.z,
             z: self.x * rhs.y - self.y * rhs.x,
@@ -36,7 +36,7 @@ impl Vector3D {
     /// The scalar triple product is equal to `a × b ⋅ c`, and is often written as `[a, b, c]`. It is also is the volume
     /// of the parallelepiped spanned by the three vectors.
     #[inline]
-    pub fn scalar_triple(a: &Vector3D, b: &Vector3D, c: &Vector3D) -> f32 {
+    pub fn scalar_triple(a: &Vec3, b: &Vec3, c: &Vec3) -> f32 {
         a.cross(b).dot(c)
     }
 
@@ -46,13 +46,13 @@ impl Vector3D {
     ///
     /// See also: [`Vector4D::from3`].
     #[inline]
-    pub const fn to4(&self, w: f32) -> Vector4D {
-        Vector4D::new(self.x, self.y, self.z, w)
+    pub const fn to4(&self, w: f32) -> Vec4 {
+        Vec4::new(self.x, self.y, self.z, w)
     }
 
     /// Creates a new [`Vector3D`] from a [`Vector2D`] and a float.
     #[inline]
-    pub const fn from2(xy: Vector2D, z: f32) -> Vector3D {
-        Vector3D::new(xy.x, xy.y, z)
+    pub const fn from2(xy: Vec2, z: f32) -> Vec3 {
+        Vec3::new(xy.x, xy.y, z)
     }
 }
