@@ -1,14 +1,8 @@
-use std::rc::Rc;
-
-pub(crate) use self::macros::*;
-
-
-// ---------------------------------------------------------------
-
-
 mod funcs;
 mod macros;
 pub mod types;
+
+pub(crate) use self::macros::*;
 
 /// Raw OpenGL bindings, generated from the specification.
 pub mod bindings {
@@ -16,18 +10,12 @@ pub mod bindings {
 }
 
 
-// ---------------------------------------------------------------
-
-
 /// A wrapper for an underlying collection of OpenGL functions.
 ///
 /// According to the specification, function pointers loaded for OpenGL are not valid on threads other than the one that
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
-///
-/// This struct wraps an [`Rc`], and so it can be cloned fairly cheaply to give function pointers to multiple objects.
-#[derive(Clone)]
 pub struct GLContext {
-    gl: Rc<bindings::GLFunctions>,
+    gl: bindings::GLFunctions,
 }
 
 // Other implementations are in other files: see the `funcs` module.
@@ -47,7 +35,7 @@ impl GLContext {
     /// return a non-null pointer after attempting all fallbacks.
     pub fn init(loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void) -> Result<Self, &'static str> {
         Ok(Self {
-            gl: Rc::new(bindings::GLFunctions::init(loader_fn)?),
+            gl: bindings::GLFunctions::init(loader_fn)?,
         })
     }
 }
