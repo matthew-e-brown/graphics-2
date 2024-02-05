@@ -38,15 +38,10 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
         r#"
             /// Load all `OpenGL` function pointers using the given function to load function pointers.
             ///
-            /// ```ignore
-            /// let gl = {}::init(|f| glfw.get_proc_address(f));
-            /// ```
-            ///
             /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
             /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
             /// return a non-null pointer after attempting all fallbacks.
-        "#,
-        STRUCT_NAME
+        "#
     )?;
 
     let init_fn_str = indoc! {r#"
