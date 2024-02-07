@@ -5,12 +5,10 @@ use gl_generator::{Api, Binding, Cmd, Registry};
 use indoc::{indoc, writedoc};
 
 use crate::rename::{rename_function, rename_lib_type, rename_parameter};
+use crate::STRUCT_NAME;
 
 
-/// What to call the final outputted struct. Something like, `GLContext`, `GLFunctionPointers`, etc.
-const STRUCT_NAME: &'static str = "GLFunctions";
-
-
+/// Output the declaration for the struct of function pointers.
 pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     writedoc!(
         dest,
@@ -29,7 +27,7 @@ pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Resu
     Ok(())
 }
 
-
+/// Output the constructor function for the function pointer struct.
 pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
@@ -107,7 +105,7 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
     Ok(())
 }
 
-
+/// Write the `impl` block for the function pointer struct, where the raw void-pointer dereferences/calls are performed.
 pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     // Doesn't need any `write!` formatting
     let macro_str = indoc! {r#"
@@ -147,7 +145,6 @@ pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Resu
     writeln!(dest, "}}")?; // Close impl
     Ok(())
 }
-
 
 fn make_params(bindings: &[Binding]) -> String {
     bindings

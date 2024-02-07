@@ -15,7 +15,7 @@ pub mod bindings {
 /// According to the specification, function pointers loaded for OpenGL are not valid on threads other than the one that
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
 pub struct GLContext {
-    gl: bindings::GLFunctions,
+    gl: bindings::GLPointers,
 }
 
 // Other implementations are in other files: see the `funcs` module.
@@ -35,7 +35,7 @@ impl GLContext {
     /// return a non-null pointer after attempting all fallbacks.
     pub fn init(loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void) -> Result<Self, &'static str> {
         Ok(Self {
-            gl: bindings::GLFunctions::init(loader_fn)?,
+            gl: bindings::GLPointers::init(loader_fn)?,
         })
     }
 }
