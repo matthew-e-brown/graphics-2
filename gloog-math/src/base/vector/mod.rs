@@ -237,8 +237,9 @@ fn parse_vec<const DIM: usize>(s: &str) -> Result<[f32; DIM], ParseVecError> {
                 return Err(ParseVecError::TooManyComponents(d));
             }
 
-            // If we find a non-whitespace character, then the last character before this was the end of our float.
-            if cur_char == ',' || cur_char.is_whitespace() {
+            // If we find a non-whitespace character, then the last character before this was the end of our float. Or,
+            // if we hit the end of the string, we need to parse.
+            if cur_char == ',' || cur_char.is_whitespace() || c_idx == s.len() - 1 {
                 num_idx = None; // no longer inside float
 
                 arr[arr_idx] = s[s_idx..c_idx].parse().map_err(|_| ParseVecError::InvalidFloat(s_idx..c_idx))?;
@@ -247,10 +248,7 @@ fn parse_vec<const DIM: usize>(s: &str) -> Result<[f32; DIM], ParseVecError> {
         } else if cur_char != ',' && !cur_char.is_whitespace() {
             // Otherwise, we're between floats; if we found a non-comma, non-whitespace character, that's the start of
             // the next float (and if it isn't a float, `f32::parse` will handle it).
-
-            // `+1` won't cause an out-of-bounds if this is the last character, since it'll only get used if the
-            // while-loop runs again.
-            num_idx = Some(c_idx + 1);
+            num_idx = Some(c_idx);
         }
     }
 
