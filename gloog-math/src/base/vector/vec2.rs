@@ -1,6 +1,8 @@
+use core::str::FromStr;
+
 use bytemuck::{Pod, Zeroable};
 
-use super::Vec3;
+use super::{parse_vec, ParseVecError, Vec3};
 
 
 /// A two-dimensional vector of 32-bit floats.
@@ -23,5 +25,13 @@ impl Vec2 {
     #[inline]
     pub const fn to3(&self, z: f32) -> Vec3 {
         Vec3::new(self.x, self.y, z)
+    }
+}
+
+impl FromStr for Vec2 {
+    type Err = ParseVecError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_vec::<2>(s).map(|arr| arr.into())
     }
 }

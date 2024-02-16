@@ -2,6 +2,9 @@ mod vec2;
 mod vec3;
 mod vec4;
 
+use std::ops::Range;
+
+use thiserror::Error;
 pub use vec2::*;
 pub use vec3::*;
 pub use vec4::*;
@@ -194,5 +197,70 @@ macro_rules! impl_vector_basics {
     };
 }
 
-
 use impl_vector_basics;
+
+
+#[derive(Error, Debug)]
+pub enum ParseVecError {
+    #[error("encountered invalid float at range {0:?}")]
+    InvalidFloat(Range<usize>),
+
+    #[error("encountered {0} of required {1} vector components")]
+    TooFewComponents(u32, u32),
+
+    #[error("encountered more than the required {0} vector components")]
+    TooManyComponents(u32),
+}
+
+/// Helper function for parsing a vector from a string.
+fn parse_vec<const DIM: usize>(s: &str) -> Result<[f32; DIM], ParseVecError> {
+    let mut arr = [0.0; DIM];
+
+    // Ignore whitespace at the start and end, just like we do between floats
+    let s = s.trim();
+
+    let mut num_idx = Some(0); // current float's starting index
+    let mut arr_idx = 0; // index into output array
+
+    // we want to split at either a comma or whitespace; but when we encounter a comma, we also want to eat all
+    // whitespace. so we'll loop ourselves instead of using one of Rust's splitter functions. Regex would be a bit too
+    // heavy-duty for this.
+    for (c_idx, cur_char) in s.char_indices() {
+        // If we're currently inside of a float, `f_start` will be Some(idx)
+        if let Some(s_idx) = num_idx {
+            // We're inside of a float right now.
+
+            // If we manage to make it back here after parsing the DIM'th component, then they managed to find more
+            // non-whitespace characters after we parsed the last component.
+            if arr_idx >= DIM {
+                let d = DIM.try_into().unwrap(); // we know `2 <= DIM <= 4`; safe to unwrap
+                return Err(ParseVecError::TooManyComponents(d));
+            }
+
+            // If we find a non-whitespace character, then the last character before this was the end of our float.
+            if cur_char == ',' || cur_char.is_whitespace() {
+                num_idx = None; // no longer inside float
+
+                arr[arr_idx] = s[s_idx..c_idx].parse().map_err(|_| ParseVecError::InvalidFloat(s_idx..c_idx))?;
+                arr_idx += 1;
+            }
+        } else if cur_char != ',' && !cur_char.is_whitespace() {
+            // Otherwise, we're between floats; if we found a non-comma, non-whitespace character, that's the start of
+            // the next float (and if it isn't a float, `f32::parse` will handle it).
+
+            // `+1` won't cause an out-of-bounds if this is the last character, since it'll only get used if the
+            // while-loop runs again.
+            num_idx = Some(c_idx + 1);
+        }
+    }
+
+    // If we got to the end without having parsed the DIM'th component, we didn't get enough components.
+    if arr_idx < DIM {
+        // we know `2 <= DIM <= 4` (and `arr_idx` is less than that), so unwrapping is fine
+        let d = DIM.try_into().unwrap();
+        let i = arr_idx.try_into().unwrap();
+        Err(ParseVecError::TooFewComponents(d, i))
+    } else {
+        Ok(arr)
+    }
+}

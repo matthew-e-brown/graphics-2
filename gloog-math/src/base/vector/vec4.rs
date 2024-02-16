@@ -1,6 +1,8 @@
+use core::str::FromStr;
+
 use bytemuck::{Pod, Zeroable};
 
-use super::Vec3;
+use super::{parse_vec, ParseVecError, Vec3};
 
 
 /// A four-dimensional vector of 32-bit floats.
@@ -31,5 +33,13 @@ impl Vec4 {
     #[inline]
     pub const fn from3(xyz: Vec3, w: f32) -> Vec4 {
         Vec4::new(xyz.x, xyz.y, xyz.z, w)
+    }
+}
+
+impl FromStr for Vec4 {
+    type Err = ParseVecError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parse_vec::<4>(s).map(|arr| arr.into())
     }
 }
