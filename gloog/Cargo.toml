@@ -1,0 +1,10 @@
+[package]
+name = "gloog"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gloog-core = { path = "../gloog-core", version = "*" }
+gloog-math = { path = "../gloog-math", version = "*" }
+glfw = "0.52.0"
+thiserror = "1.0.57"
