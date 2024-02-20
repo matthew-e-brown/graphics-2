@@ -13,13 +13,13 @@ use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use gloog_math::{Vec2, Vec3};
-use log::{debug, trace, warn};
+use log::{debug, log, trace};
 use thiserror::Error;
 
 use self::mtl::MtlMaterial;
 use super::{fmt_line_range, lines_escaped, LineRange};
 
-// cspell:words curv interp stech ctech usemtl mtllib
+// cspell:words curv interp stech ctech scrv cstype bmat usemtl mtllib maplib usemap
 
 // Source for OBJ and MTL specs:
 // - https://www.uhu.es/francisco.moreno/gii_rv/practicas/practica08/OBJ_SPEC.PDF
@@ -30,27 +30,26 @@ use super::{fmt_line_range, lines_escaped, LineRange};
 
 #[rustfmt::skip]
 #[derive(Error, Debug)]
-pub enum ObjLoadError {
+pub enum ObjParseError {
     #[error("failed to read from file:\n{0:?}")]
     IOError(#[from] io::Error),
 
-    #[error("'{directive}' directive at {} has invalid float", fmt_line_range(.lines))]
+    #[error("'{directive}' directive on {} has invalid float(s)", fmt_line_range(.lines))]
     InvalidFloats { lines: LineRange, directive: &'static str },
 
-    #[error("'{directive}' directive at {} has {n} of required {min} floats", fmt_line_range(.lines))]
+    #[error("'{directive}' directive on {} has {n} of required {min} floats", fmt_line_range(.lines))]
     NotEnoughFloats { lines: LineRange, directive: &'static str, n: usize, min: usize },
 
-    #[error("'{directive}' directive at {} has {n} floats, but max is {max}", fmt_line_range(.lines))]
+    #[error("'{directive}' directive on {} has {n} floats, but max is {max}", fmt_line_range(.lines))]
     TooManyFloats { lines: LineRange, directive: &'static str, n: usize, max: usize },
 
-    #[error("unknown directive '{directive}' at {}", fmt_line_range(.lines))]
+    #[error("unknown directive '{directive}' on {}", fmt_line_range(.lines))]
     UnknownDirective { lines: LineRange, directive: String },
 }
 
-
 // Helper functions for quick construction of error values
 #[rustfmt::skip]
-impl ObjLoadError {
+impl ObjParseError {
     #[inline(always)]
     fn invalid<T>(lines: &LineRange, directive: &'static str) -> Result<T, Self> {
         Err(Self::InvalidFloats { lines: lines.clone(), directive })
@@ -90,7 +89,7 @@ pub struct ObjModel {
     /// cases where `v` is omitted, it defaults to zero.
     tex_coords: Vec<Vec2>,
     /// List of all groups encountered in the file.
-    groups: BTreeMap<Arc<str>, Vec<FaceElement>>,
+    faces: Vec<FaceElement>,
     /// List of all materials in the file, indexed by name.
     materials: BTreeMap<Arc<str>, MtlMaterial>,
 }
@@ -116,12 +115,11 @@ pub struct FaceElement {
 /// States include things like which group things are a part of, current material information, and so on.
 #[derive(Debug, Default)]
 struct ParseState {
-    cur_group: Option<Arc<str>>,
     cur_material: Option<Arc<str>>,
 }
 
 
-pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjLoadError> {
+pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjParseError> {
     let mut data = ObjModel::default(); // Final data that gets returned
     let mut state = ParseState::default(); // Other state that changes as we parse
 
@@ -155,16 +153,10 @@ pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjLoadError> {
             "v" => read_v(rest, &mut data.vertices, &line_nums)?,
             "vn" => read_vn(rest, &mut data.normals, &line_nums)?,
             "vt" => read_vt(rest, &mut data.tex_coords, &line_nums)?,
-            "f" => (),
-            "g" => (),
-            "o" => (),
-            "usemtl" => (),
-            "mtllib" => (),
-            // Other
-            "vp" | "p" | "l" | "s" | "mg" | "bevel" | "c_interp" | "d_interp" | "lod" | "shadow_obj" | "trace_obj"
-            | "ctech" | "stech" => warn!("unsupported *.obj directive `{directive}`"),
-            // ------
-            _ => return ObjLoadError::unknown(&line_nums, directive),
+            "f" => unimplemented!("'f' directive"),
+            "mtllib" => unimplemented!("'mtllib' directive"),
+            "usemtl" => unimplemented!("'usemtl' directive"),
+            _ => check_other(directive, &line_nums)?,
         }
     }
 
@@ -174,7 +166,7 @@ pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjLoadError> {
         data.vertices.len(),
         data.normals.len(),
         data.tex_coords.len(),
-        data.groups.values().map(|g| g.len()).sum::<usize>(),
+        data.faces.len(),
     );
 
     todo!();
@@ -183,13 +175,13 @@ pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjLoadError> {
 
 /// Parses the body of a `v` directive from an OBJ file and inserts its resultant vector into the given list. `lines` is
 /// needed for error-reporting.
-fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjLoadError> {
+fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjParseError> {
     // Take at most four; some files seem to specify extra `1` values after the w to force some viewers to get the
     // message (that's my guess anyways).
     let floats = text.split_whitespace().take(4).map(|s| s.parse());
     let floats: ArrayVec<f32, 4> = match floats.collect() {
         Ok(vec) => vec,
-        Err(_) => return ObjLoadError::invalid(lines, "v"),
+        Err(_) => return ObjParseError::invalid(lines, "v"),
     };
 
     // xyz are required; w is optional and defaults to 1. In OBJ, w is only used for free-form curves and surfaces:
@@ -197,10 +189,13 @@ fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Obj
     // Meaning, we should never run into a case where `w` it isn't 1. If we do, simply emit a small warning/notice that
     // the file _may_ contain unsupported features and that we're ignoring it.
     if floats.len() < 3 {
-        ObjLoadError::not_enough(lines, "v", floats.len(), 3)
+        ObjParseError::not_enough(lines, "v", floats.len(), 3)
     } else {
         if floats.len() == 4 && floats[3] != 1.0 {
-            debug!("found vertex with non-1.0 'w' component {}; 'w' only affects free-form geometry, so it will be ignored", floats[3]);
+            debug!(
+                "ignoring non-1.0 'w' component of '{}', since 'w' only affects free-form geometry (unsupported)",
+                text
+            );
         }
 
         // Take the first three and convert them into an array, then into a vector; safe to unwrap because we already
@@ -216,18 +211,18 @@ fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Obj
 }
 
 /// Parses the body of a `vn` directive from an OBJ file.
-fn read_vn(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjLoadError> {
+fn read_vn(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjParseError> {
     // Take as many as they provided, and expect exactly three. The spec says that there should always be three.
     let floats = text.split_whitespace().map(|s| s.parse());
     let floats: Vec<f32> = match floats.collect() {
         Ok(vec) => vec,
-        Err(_) => return ObjLoadError::invalid(lines, "vn"),
+        Err(_) => return ObjParseError::invalid(lines, "vn"),
     };
 
     if floats.len() < 3 {
-        ObjLoadError::not_enough(lines, "vn", floats.len(), 3)
+        ObjParseError::not_enough(lines, "vn", floats.len(), 3)
     } else if floats.len() > 3 {
-        ObjLoadError::too_many(lines, "vn", floats.len(), 3)
+        ObjParseError::too_many(lines, "vn", floats.len(), 3)
     } else {
         // We know there's exactly three now
         let arr: [f32; 3] = floats.try_into().unwrap();
@@ -241,22 +236,22 @@ fn read_vn(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Ob
 }
 
 /// Parses the body of a `vn` directive from an OBJ file.
-fn read_vt(text: &str, data: &mut Vec<Vec2>, lines: &LineRange) -> Result<(), ObjLoadError> {
+fn read_vt(text: &str, data: &mut Vec<Vec2>, lines: &LineRange) -> Result<(), ObjParseError> {
     let floats = text.split_whitespace().map(|s| s.parse());
     let floats: Vec<f32> = match floats.collect() {
         Ok(vec) => vec,
-        Err(_) => return ObjLoadError::invalid(lines, "vt"),
+        Err(_) => return ObjParseError::invalid(lines, "vt"),
     };
 
     let vec: Vec2 = match floats.len() {
-        0 => return ObjLoadError::not_enough(lines, "vt", floats.len(), 1),
+        0 => return ObjParseError::not_enough(lines, "vt", floats.len(), 1),
         1 => [floats[0], 0.0].into(),
         2 => [floats[0], floats[1]].into(),
         3 => {
-            debug!("found texture coord with 3rd dimension; it will be ignored");
+            debug!("found texture coord with 3rd dimension; 3rd dimension will be ignored");
             [floats[0], floats[1]].into()
         },
-        n => return ObjLoadError::too_many(lines, "vt", n, 3),
+        n => return ObjParseError::too_many(lines, "vt", n, 3),
     };
 
     trace!("parsed tex-coord {vec:?}");
@@ -266,47 +261,38 @@ fn read_vt(text: &str, data: &mut Vec<Vec2>, lines: &LineRange) -> Result<(), Ob
 }
 
 
-// /// Reads a series of whitespace-separated items into an [`ArrayVec`] of the given capacity.
-// fn read_to_array<T: FromStr, const N: usize>(text: &str) -> Result<ArrayVec<T, N>, T::Err> {
-//     text.trim().split_whitespace().take(N).map(|str| str.parse()).collect()
-// }
+/// Checks whether or not an unsupported directive can be skipped gracefully and logs it if applicable.
+fn check_other(directive: &str, lines: &LineRange) -> Result<(), ObjParseError> {
+    // For unsupported features, they are split into ones that we can gracefully ignore vs. ones that the
+    // user may expect to make a difference.
+    let level = match directive {
+        // Grouping isn't needed because we don't do any fancy visualization; just rendering.
+        "g" | "o" => log::Level::Trace,
+        // We only support `mtl` files through `mtllib`, not others (mostly because there is basically zero
+        // documentation on how these two work).
+        "maplib" | "usemap" => log::Level::Error,
+        // Smoothing we want the user to know isn't working. Merge groups are part of free-form surfaces.
+        "s" => log::Level::Warn,
+        "mg" => log::Level::Error,
+        // Point, line, and curve elements are usually non-visible anyways (infinitely thin), but we don't
+        // want the user to expect us to handle those
+        "p" | "l" | "curv" | "curv2" => log::Level::Warn,
+        // Parameter space vertices and free form surfaces are not supported at all.
+        "vp" | "surf" => log::Level::Error,
+        // Their associated controls are therefore not supported either, but they're less severe.
+        "cstype" | "deg" | "step" | "bmat" => log::Level::Warn,
+        "parm" | "trim" | "hole" | "scrv" | "sp" | "con" => log::Level::Warn,
+        "end" => log::Level::Trace,
+        // Display/render attributes other than usemtl and mtllib are also unsupported.
+        "bevel" => log::Level::Warn,
+        // These could maybe be implemented in the future? For toggling vertex-colour interpolation?
+        "c_interp" | "d_interp" => log::Level::Warn,
+        // Level-of-detail, shadow and ray tracing, etc.
+        "lod" | "shadow_obj" | "trace_obj" | "ctech" | "stech" => log::Level::Error,
+        // Anything else is a flat-out unknown directive.
+        _ => return ObjParseError::unknown(lines, directive),
+    };
 
-// fn index_to_unsigned(idx: isize, cur_len: usize) -> usize {
-//     if idx > 0 {
-//         (idx as usize) - 1
-//     } else if idx < 0 {
-//         cur_len - (idx.abs() as usize) - 1
-//     } else {
-//         panic!("encountered zero index");
-//     }
-// }
-
-// /// Reads a series of whitespace-separated items into a [`Vec`] of the given capacity.
-// fn read_indices(text: &str, cur_v_len: usize) -> Vec<usize> {
-//     text.trim()
-//         .split_whitespace()
-//         .map(|str| index_to_unsigned(str.parse().unwrap(), cur_v_len))
-//         .collect()
-// }
-
-// fn read_slashed_indices(text: &str, cur_v_len: usize, cur_vn_len: usize, cur_vt_len: usize) -> Vec<usize> {
-//     // Parse `a/b/c`, with optional `b` and `c`, into a tuple
-//     let parse = |text: &str| -> (usize, Option<usize>, Option<usize>) {
-//         let mut nums = text.split('/').map(|n| n.parse::<isize>());
-//         let v = index_to_unsigned(nums.next().unwrap().unwrap(), cur_v_len);
-//         let vt = nums.next().map(|idx| index_to_unsigned(idx.unwrap(), cur_vn_len));
-//         let vn = nums.next().map(|idx| index_to_unsigned(idx.unwrap(), cur_vt_len));
-//         (v, vt, vn)
-//     };
-
-//     // Split on whitespace
-//     let mut verts = text.trim().split_whitespace();
-
-//     // Parse the first one first
-
-//     todo!();
-// }
-
-// fn read_face_elem(text: &str, data: &ObjModel) -> FaceElement {
-//     todo!()
-// }
+    log!(level, "ignoring *.obj directive '{directive}'; feature unsupported");
+    Ok(())
+}
