@@ -21,7 +21,7 @@ pub fn main() -> ExitCode {
 
 
 fn run(model_path: String) -> Result<(), Box<dyn Error>> {
-    loader::obj::load(model_path)?;
+    loader::obj::load(model_path);
 
     Ok(())
 }
