@@ -3,14 +3,14 @@
 use std::io::{self, BufRead};
 use std::ops::Range;
 
+pub mod dae;
 pub mod fbx;
 pub mod gltf;
 pub mod obj;
 
-/// Implementors of this trait may be converted into actual models.
-pub trait RawModelData {}
 
 type LineRange = Range<usize>;
+
 
 /// Iterates over lines in a [buffered reader][BufRead], merging consecutive lines when one ends with a backslash.
 ///
