@@ -72,7 +72,8 @@ fn lines_escaped<R: BufRead>(reader: R) -> impl Iterator<Item = io::Result<(Line
 
 /// Formats a range of line numbers as either `line N` or `lines N to M` if the range is longer than one line.
 fn fmt_line_range(range: &LineRange) -> String {
-    if range.start == range.end {
+    // Range is exclusive, hence - 1
+    if range.start == range.end - 1 {
         format!("line {}", range.start)
     } else {
         format!("lines {} to {}", range.start, range.end)

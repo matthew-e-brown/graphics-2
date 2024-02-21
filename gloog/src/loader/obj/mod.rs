@@ -3,21 +3,24 @@
 //! Only all-polygonal models are supported are the moment (no free-form surfaces). These are those that use only `f`,
 //! no `curv` or `surf` statements. Unsupported statements are simply ignored, though a warning is produced.
 
+mod error;
 mod mtl;
 
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{self, BufReader};
+use std::io::BufReader;
+use std::num::ParseFloatError;
 use std::path::Path;
 use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use gloog_math::{Vec2, Vec3};
-use log::{debug, log, trace};
-use thiserror::Error;
+use log::{debug, log, trace, warn};
 
+use self::error::ObjParseError;
 use self::mtl::MtlMaterial;
-use super::{fmt_line_range, lines_escaped, LineRange};
+use super::{lines_escaped, LineRange};
+use crate::loader::fmt_line_range;
 
 // cspell:words curv interp stech ctech scrv cstype bmat usemtl mtllib maplib usemap
 
@@ -25,53 +28,6 @@ use super::{fmt_line_range, lines_escaped, LineRange};
 // - https://www.uhu.es/francisco.moreno/gii_rv/practicas/practica08/OBJ_SPEC.PDF
 // - also: https://paulbourke.net/dataformats/obj/ (missing math section)
 // - https://paulbourke.net/dataformats/mtl/
-
-// ---------------------------------------------------------------------------------------------------------------------
-
-#[rustfmt::skip]
-#[derive(Error, Debug)]
-pub enum ObjParseError {
-    #[error("failed to read from file:\n{0:?}")]
-    IOError(#[from] io::Error),
-
-    #[error("'{directive}' directive on {} has invalid float(s)", fmt_line_range(.lines))]
-    InvalidFloats { lines: LineRange, directive: &'static str },
-
-    #[error("'{directive}' directive on {} has {n} of required {min} floats", fmt_line_range(.lines))]
-    NotEnoughFloats { lines: LineRange, directive: &'static str, n: usize, min: usize },
-
-    #[error("'{directive}' directive on {} has {n} floats, but max is {max}", fmt_line_range(.lines))]
-    TooManyFloats { lines: LineRange, directive: &'static str, n: usize, max: usize },
-
-    #[error("unknown directive '{directive}' on {}", fmt_line_range(.lines))]
-    UnknownDirective { lines: LineRange, directive: String },
-}
-
-// Helper functions for quick construction of error values
-#[rustfmt::skip]
-impl ObjParseError {
-    #[inline(always)]
-    fn invalid<T>(lines: &LineRange, directive: &'static str) -> Result<T, Self> {
-        Err(Self::InvalidFloats { lines: lines.clone(), directive })
-    }
-
-    #[inline(always)]
-    fn not_enough<T>(lines: &LineRange, directive: &'static str, n: usize, min: usize) -> Result<T, Self> {
-        Err(Self::NotEnoughFloats { lines: lines.clone(), directive, n, min })
-    }
-
-    #[inline(always)]
-    fn too_many<T>(lines: &LineRange, directive: &'static str, n: usize, max: usize) -> Result<T, Self> {
-        Err(Self::TooManyFloats { lines: lines.clone(), directive, n, max })
-    }
-
-    #[inline(always)]
-    fn unknown<T>(lines: &LineRange, directive: &str) -> Result<T, Self> {
-        Err(Self::UnknownDirective { lines: lines.clone(), directive: directive.to_owned() })
-    }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
 
 
 /// Raw data from an OBJ file, ready to be converted into an actual OpenGL-ready model.
@@ -153,9 +109,9 @@ pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjParseError> {
             "v" => read_v(rest, &mut data.vertices, &line_nums)?,
             "vn" => read_vn(rest, &mut data.normals, &line_nums)?,
             "vt" => read_vt(rest, &mut data.tex_coords, &line_nums)?,
-            "f" => unimplemented!("'f' directive"),
-            "mtllib" => unimplemented!("'mtllib' directive"),
-            "usemtl" => unimplemented!("'usemtl' directive"),
+            "f" => read_f(rest, &mut data, &state, &line_nums)?,
+            "mtllib" => warn!("(unimplemented) 'mtllib' directive on {}", fmt_line_range(&line_nums)),
+            "usemtl" => warn!("(unimplemented) 'usemtl' directive on {}", fmt_line_range(&line_nums)),
             _ => check_other(directive, &line_nums)?,
         }
     }
@@ -173,23 +129,32 @@ pub fn load(path: impl AsRef<Path>) -> Result<ObjModel, ObjParseError> {
 }
 
 
+/// Reads at most `N` whitespace-separated floats from a line of text, returning them alongside the number that remain
+/// on the line.
+fn read_ws_verts<const N: usize>(text: &str) -> Result<(ArrayVec<f32, N>, usize), ParseFloatError> {
+    // Take at most `N` vertices
+    let mut pieces = text.split_whitespace().map(|s| s.parse());
+    let floats = pieces.by_ref().take(N).collect::<Result<ArrayVec<f32, N>, _>>()?;
+    let remaining = pieces.count();
+    Ok((floats, remaining))
+}
+
+
 /// Parses the body of a `v` directive from an OBJ file and inserts its resultant vector into the given list. `lines` is
 /// needed for error-reporting.
 fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjParseError> {
     // Take at most four; some files seem to specify extra `1` values after the w to force some viewers to get the
     // message (that's my guess anyways).
-    let floats = text.split_whitespace().take(4).map(|s| s.parse());
-    let floats: ArrayVec<f32, 4> = match floats.collect() {
-        Ok(vec) => vec,
-        Err(_) => return ObjParseError::invalid(lines, "v"),
-    };
+    let (floats, remaining) = read_ws_verts::<4>(text).or(ObjParseError::v_parse_err(lines, "v").into())?;
 
     // xyz are required; w is optional and defaults to 1. In OBJ, w is only used for free-form curves and surfaces:
     // there are no homogeneous coordinates/transformations within OBJ files; everything is simply stored in 3D space.
     // Meaning, we should never run into a case where `w` it isn't 1. If we do, simply emit a small warning/notice that
     // the file _may_ contain unsupported features and that we're ignoring it.
     if floats.len() < 3 {
-        ObjParseError::not_enough(lines, "v", floats.len(), 3)
+        Err(ObjParseError::v_too_small(lines, "v", floats.len(), 3))
+    } else if remaining > 0 {
+        Err(ObjParseError::v_too_large(lines, "v", floats.len() + remaining, 4))
     } else {
         if floats.len() == 4 && floats[3] != 1.0 {
             debug!(
@@ -198,13 +163,9 @@ fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Obj
             );
         }
 
-        // Take the first three and convert them into an array, then into a vector; safe to unwrap because we already
-        // know that we correctly parsed 3-4 floats.
-        let arr: [f32; 3] = floats[0..3].try_into().unwrap();
-        let vec: Vec3 = arr.into();
-
+        // Take the first three and convert them into an array, then into a vector; we know there're at least 3.
+        let vec = [floats[0], floats[1], floats[2]].into();
         trace!("parsed vertex {vec:?}");
-
         data.push(vec);
         Ok(())
     }
@@ -212,24 +173,17 @@ fn read_v(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Obj
 
 /// Parses the body of a `vn` directive from an OBJ file.
 fn read_vn(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), ObjParseError> {
-    // Take as many as they provided, and expect exactly three. The spec says that there should always be three.
-    let floats = text.split_whitespace().map(|s| s.parse());
-    let floats: Vec<f32> = match floats.collect() {
-        Ok(vec) => vec,
-        Err(_) => return ObjParseError::invalid(lines, "vn"),
-    };
+    // Take as many as they provided, in a Vec. The spec says that there should always be three.
+    let (floats, remaining) = read_ws_verts::<3>(text).or(ObjParseError::v_parse_err(lines, "vn").into())?;
 
     if floats.len() < 3 {
-        ObjParseError::not_enough(lines, "vn", floats.len(), 3)
-    } else if floats.len() > 3 {
-        ObjParseError::too_many(lines, "vn", floats.len(), 3)
+        Err(ObjParseError::v_too_small(lines, "vn", floats.len(), 3))
+    } else if remaining > 0 {
+        Err(ObjParseError::v_too_large(lines, "vn", floats.len() + remaining, 3))
     } else {
         // We know there's exactly three now
-        let arr: [f32; 3] = floats.try_into().unwrap();
-        let vec: Vec3 = arr.into();
-
+        let vec = [floats[0], floats[1], floats[2]].into();
         trace!("parsed normal {vec:?}");
-
         data.push(vec);
         Ok(())
     }
@@ -237,27 +191,127 @@ fn read_vn(text: &str, data: &mut Vec<Vec3>, lines: &LineRange) -> Result<(), Ob
 
 /// Parses the body of a `vn` directive from an OBJ file.
 fn read_vt(text: &str, data: &mut Vec<Vec2>, lines: &LineRange) -> Result<(), ObjParseError> {
-    let floats = text.split_whitespace().map(|s| s.parse());
-    let floats: Vec<f32> = match floats.collect() {
-        Ok(vec) => vec,
-        Err(_) => return ObjParseError::invalid(lines, "vt"),
-    };
+    let (floats, remaining) = read_ws_verts::<3>(text).or(ObjParseError::v_parse_err(lines, "vt").into())?;
 
-    let vec: Vec2 = match floats.len() {
-        0 => return ObjParseError::not_enough(lines, "vt", floats.len(), 1),
+    let vec = match floats.len() {
+        0 => return Err(ObjParseError::v_too_small(lines, "vt", floats.len(), 1)),
         1 => [floats[0], 0.0].into(),
         2 => [floats[0], floats[1]].into(),
-        3 => {
+        3 if remaining == 0 => {
             debug!("found texture coord with 3rd dimension; 3rd dimension will be ignored");
             [floats[0], floats[1]].into()
         },
-        n => return ObjParseError::too_many(lines, "vt", n, 3),
+        n => return Err(ObjParseError::v_too_large(lines, "vt", n + remaining, 3)),
     };
 
     trace!("parsed tex-coord {vec:?}");
 
     data.push(vec);
     Ok(())
+}
+
+
+/// Parses the body of an `f` directive from an OBJ file.
+fn read_f(text: &str, data: &mut ObjModel, state: &ParseState, lines: &LineRange) -> Result<(), ObjParseError> {
+    // Each face is a list of indices into vertex data. Indices may be of the form:
+    // - `v`
+    // - `v/vt`
+    // - `v/vt/vn`
+    // - `v//vn`
+    // Each element in the list must be of the same form. Additionally, indices are 1-based and may be negative, which
+    // represents an index from the current end of the list. There must be at least three vertices.
+
+    // Iterator of each `(v/vt/vn) (v/vt/vn) (v/vt/vn) ...` in the current face:
+    let mut vertex_references = text.split_whitespace().map(|v_refs_str| -> Result<_, _> {
+        // Parses each of the slash-separated "vertex references" into a `usize`, taking into account any
+        // negative/relative indexing. `vec_len` and `vec_name` are used for error-checking.
+        let parse_v_ref = |ref_str: &str, vec_len: usize, vec_name: &'static str| -> Result<usize, _> {
+            // Parse each component as a signed number, then convert that to a signed index.
+            let ref_idx: isize = ref_str.parse().or(ObjParseError::f_parse_err(lines).into())?;
+            let idx_err = ObjParseError::f_index_range(lines, vec_name, ref_idx, vec_len);
+            if ref_idx > 0 {
+                // If it's positive, subtract 1 to get the zero-based index; check if its within our range.
+                match usize::try_from(ref_idx).unwrap() - 1 {
+                    i if i < vec_len => Ok(i),
+                    _ => Err(idx_err),
+                }
+            } else if ref_idx < 0 {
+                // If it's negative, subtract it from the current length; check that it doesn't attempt to go before 0.
+                let offset = usize::try_from(-ref_idx).unwrap();
+                let idx = vec_len.checked_sub(offset).ok_or(idx_err)?;
+                Ok(idx)
+            } else {
+                // A zero index is out of range.
+                Err(idx_err)
+            }
+        };
+
+        // Split on slashes to get each component:
+        let mut indices = v_refs_str.split('/');
+
+        // Then parse once for each of `v`, `vt`, and `vn`:
+        let v_len = data.vertices.len();
+        let vt_len = data.tex_coords.len();
+        let vn_len = data.normals.len();
+
+        // There must be at least one item (splitting "v" on '/' will just yield "v"), so we are safe to unwrap the
+        // first number; error-check with `?` after doing so. `vt` and `vn` will be `None` if there weren't enough
+        // slashes; `Option<&str> -> Option<Result<usize>>`, transpose to `Result<Option<usize>>` and `?`.
+        let v = parse_v_ref(indices.next().unwrap(), v_len, "v")?;
+        let vt = indices.next().map(|s| parse_v_ref(s, vt_len, "vt")).transpose()?;
+        let vn = indices.next().map(|s| parse_v_ref(s, vn_len, "vn")).transpose()?;
+
+        // There should only be 3 slash-separated components; if there are more remaining after parsing the first 3, we
+        // have a problem.
+        if indices.count() > 0 {
+            Err(ObjParseError::f_parse_err(lines))
+        } else {
+            Ok((v, vt, vn))
+        }
+    });
+
+    // Will compare all vertices to the first one, ensuring their slashes match
+    let (v1, vt1, vn1) = vertex_references.next().ok_or(ObjParseError::f_too_few(lines, 0))??;
+
+    // Seed our lists with the first vertex reference
+    let mut v_list = vec![v1];
+    let mut vt_list = vt1.map(|vt| vec![vt]);
+    let mut vn_list = vn1.map(|vn| vec![vn]);
+
+    // Then for each subsequent one:
+    for parsed_v_refs in vertex_references {
+        // Check if the tuple was parsed properly and push the first into its list.
+        let (v, vt, vn) = parsed_v_refs?;
+        v_list.push(v);
+
+        // If both `vt` and the list of `vt` are Some, we're good; push into the list. Otherwise, the should both be
+        // None.
+        if let Some((v_ref, list)) = vt.zip(vt_list.as_mut()) {
+            list.push(v_ref)
+        } else if !vt.is_none() || !vt_list.is_none() {
+            return Err(ObjParseError::f_mismatched(lines));
+        }
+
+        // Same goes for normals.
+        if let Some((v_ref, list)) = vn.zip(vn_list.as_mut()) {
+            list.push(v_ref)
+        } else if !vn.is_none() || !vn_list.is_none() {
+            return Err(ObjParseError::f_mismatched(lines));
+        }
+    }
+
+    if v_list.len() < 3 {
+        Err(ObjParseError::f_too_few(lines, v_list.len()))
+    } else {
+        data.faces.push(FaceElement {
+            mtl_name: state.cur_material.clone(),
+            vertices: v_list,
+            tex_coords: vt_list,
+            normals: vn_list,
+        });
+
+        Ok(())
+    }
 }
 
 
@@ -290,7 +344,7 @@ fn check_other(directive: &str, lines: &LineRange) -> Result<(), ObjParseError> 
         // Level-of-detail, shadow and ray tracing, etc.
         "lod" | "shadow_obj" | "trace_obj" | "ctech" | "stech" => log::Level::Error,
         // Anything else is a flat-out unknown directive.
-        _ => return ObjParseError::unknown(lines, directive),
+        _ => return ObjParseError::unknown(lines, directive).into(),
     };
 
     log!(level, "ignoring *.obj directive '{directive}'; feature unsupported");
