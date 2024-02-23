@@ -1,8 +1,9 @@
 mod mtl;
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::num::ParseFloatError;
+use std::num::{NonZeroU16, NonZeroUsize, ParseFloatError};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -13,6 +14,10 @@ use log::{debug, log, trace, warn};
 
 use super::error::ObjParseError;
 use crate::loader::{fmt_line_range, lines_escaped, LineRange};
+
+
+/// The constant that is used for primitive restarting in OpenGL.
+const PRIMITIVE_RESTART: GLuint = GLuint::MAX;
 
 
 // cspell:words curv interp stech ctech scrv cstype bmat usemtl mtllib maplib usemap
@@ -38,38 +43,65 @@ use crate::loader::{fmt_line_range, lines_escaped, LineRange};
 // =====================================================================================================================
 
 
+/// A drawable model comprised of data from an OBJ file.
 ///
+/// The raw data behind this struct are behind [`Arc`] pointers, so this struct can be cloned cheaply without the need
+/// for reallocating or re-parsing an entire model.
 #[derive(Debug, Clone)]
 pub struct ObjModel {
     /// Individual groups of faces which share a common material (and thus will share a single draw call). Each group
-    /// contains a buffer of indices with which to index into [`Self::raw_vbuffer`].
-    groups: Arc<[ObjGroup]>,
-    /// Stored on the heap as well since (future versions of) materials may also hold texture data.
-    materials: Arc<[ObjMaterial]>,
+    /// contains a buffer of indices which index into [`Self::vertex_data`] using `glDrawElements`.
+    elements: Arc<[ObjGroup]>,
     /// All raw vertex attribute data for this model. This data is referenced through indices in [`Self::elements`].
-    buffer: Arc<[u8]>,
+    vertex_data: Arc<[ObjVertex]>,
 }
 
+/// Specifies a series of elements to be drawn with a common material.
+///
+/// For example:
+///
+/// ```
+/// indices = [[8, 9, 1, 2], [8, 1, 2], [0, 4, 5, 8, 1, 3]];
+/// counts = [4, 3, 6];
+/// ```
+///
+/// This setup will draw one combined polygon with vertices 8, 9, 1, and 2; one with vertices 8, 1, and 2, and one with
+/// 0, 4, 5, 8, 1, and 3.
 #[derive(Debug)]
 struct ObjGroup {
-    /// Which material to use (as an index into [`ObjModel::materials`]) for this particular group of faces.
-    material: usize,
-    /// An OpenGL _element array buffer_ store for drawing this group of faces.
+    /// Contains information for how to set uniform information for this group's draw call. for this particular group of
+    /// faces. A value of `None` means that the "default" material should be used, whatever it may be.
+    material: Option<ObjMaterial>,
+    /// A 2D array, specifically with extra pointer indirection to be compatible with `glMultiDrawElements`'s parameter
+    /// of `const void * const *`.
     indices: Box<[GLuint]>,
 }
 
 /// Used to configure uniforms before executing draw call.
 #[derive(Debug, Default, Clone)]
 pub struct ObjMaterial {
-    // todo: should these stay as options, or be replaced with defaults upon parse?
-    pub ka: Option<Vec3>,
-    pub kd: Option<Vec3>,
-    pub ks: Option<Vec3>,
-    pub ns: Option<f32>,
-    pub opacity: Option<f32>,
-    // todo: maps
+    pub ka: Vec3,
+    pub kd: Vec3,
+    pub ks: Vec3,
+    pub ns: f32,
+    pub opacity: f32,
+    // todo: should these be options instead of just letting them be defaulted to zeroes?
+    // todo: texture maps
     // todo: any other missing fields from MTL spec?
 }
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+struct ObjVertex {
+    position: Vec3,
+    tex_coord: Vec2,
+    normal: Vec3,
+}
+
+
+/// A triple of indices into the three different sets of vertex data. Indices are 1-based to allow the optional values
+/// to represent `None` using zero.
+type FaceIndices = (NonZeroUsize, Option<NonZeroUsize>, Option<NonZeroUsize>);
 
 
 impl ObjModel {
@@ -77,55 +109,25 @@ impl ObjModel {
         let path = path.as_ref();
         let file = BufReader::new(File::open(path)?);
 
-        // - Read all vertices
-        // - Read all faces
-        // - Each unique combination of vertex references (eg. `a/b/c`, `a/b/d` are two separate ones) constitutes one
-        //   "vertex" in the final output buffer (since it's not possible to use different indices for multiple
-        //   attributes in OpenGL).
-        // - So, generate our own hash-set of `usize/Option<usize>/Option<usize>`; these are then used to index into our
-        //   raw data at the end.
-        //     - TODO: maybe keep them as 1-based indices to take advantage of `Option<NonZeroUSize>` space
-        //       optimization?)
-        // - While looping through faces, keep track of all the faces as collections of indices into our new set of
-        //   un-tangled vertices
-        //     - When doing said tracking, bin them based on the `g` group they're a part of and which material they
-        //       use. That will allow the `g` groups in the file to have some control over draw-call ordering.
-        // - Then at the end, run through our mapping and copy over the relevant data from our raw lists into our final
-        //   buffers.
-        //     - This'll sadly double (!!) our space complexity during that final parse, but we kinda have to do it this
-        //       way, since we have no way to know what our final strides/offsets should be until all the dust settles
-        //       with our face indices.
-        // - Also at the end, run through each of our bins of faces and merge each bin into one long list of indices.
+        // Phase 1: Gathering data
+        // --------------------------------------------------------------------
 
-        // PROBLEM: one long list of indices will generate one long triangle fan. unless I feel like triangulating all
-        // this stuff myself. POTENTIAL SOLUTION: look into `glMultiDrawElements`. Basically, make one `glDrawElements`
-        // call that draws each face. That way, the OBJ's spec's "as many vertices as you want" implementation of faces
-        // still works, but we can do it in one subroutine call. Probably wouldn't be as efficient as if the model was
-        // all triangulated, but hey---OBJ is ancient. What more do you want from me, bro
+        let mut v_data = Vec::new(); // Vertex positions from `v` statements
+        let mut vt_data = Vec::new(); // Texture coordinates from `vt` statements
+        let mut vn_data = Vec::new(); // Vertex normals from `vn` statements
 
-        // ok time for bed, its nearly 5am again. yeehaw
+        let mut parsed_materials: Vec<ObjMaterial> = Vec::new(); // List of all materials
+        let mut material_indices: HashMap<Box<str>, NonZeroU16> = HashMap::new(); // material name -> index in vector
+        let mut curr_material: Option<NonZeroU16> = None; // Index of currently active material
 
-        // Temp:
-        // ------------------------------------
+        // List of faces and which materials they use
+        let mut index_buffer = Vec::new(); // List of all of the FaceIndices (each makes one final vertex)
+        let mut face_vert_counts = Vec::new(); // Index `i` says how many verts face `i` uses
+        let mut face_material_map = Vec::new(); // Index `i` names which material face `i` uses (as an index).
 
-        // // Raw material data, indexed by name
-        // let mut materials = HashMap::<Box<str>, ObjMaterial>::new();
-
-        // // State for current parser; each new material forces a new element group, and each group also forces the same.
-        // // Final names of these groups are not stored, but we do use them
-        // let mut curr_material: Option<&str> = None;
-        // let mut curr_group: Option<Box<str>> = None;
-
-        // // Our final collection of material groups. Each different 'material' may use different maps and the like, and
-        // // so will require a separate draw call. Each of those may refer to data in our main lists.
-        // // let mut groups;
-
-        // ------------------------------------
-
-        // Raw vertex attribute data
-        let mut v_data = Vec::new();
-        let mut vt_data = Vec::new();
-        let mut vn_data = Vec::new();
+        // ok... I've got a big-ass list of indices that I'm indexing by storing another list of indices that index into
+        // that list of indices (which index into my other big-ass lists of vertex data). Totally not confusing... Let's
+        // just call the indices into vertex data "vertices," that'll make things easier.
 
         for line_result in lines_escaped(file) {
             let (line_nums, line) = line_result?;
@@ -145,7 +147,8 @@ impl ObjModel {
             trace!("parsing line contents: `{line}`");
 
             // Get the first thing before the first space (can unwrap because we just checked that the line was not
-            // zero-length, and we did so after trimming, which guarantees that there is at least one thing pre-whitespace).
+            // zero-length, and we did so after trimming, which guarantees that there is at least one thing
+            // pre-whitespace).
             let directive = line.split_whitespace().nth(0).unwrap();
             let rest = line[directive.len()..].trim_start(); // rest of the line
 
@@ -154,28 +157,140 @@ impl ObjModel {
                 "vt" => vt_data.push(parse_vt(rest, &line_nums)?),
                 "vn" => vn_data.push(parse_vn(rest, &line_nums)?),
                 "f" => {
-                    // Parse all the vertex reference numbers on this line into actual indices into our three lists of
-                    // vertex data
-                    let indices = parse_f(rest, (v_data.len(), vt_data.len(), vn_data.len()), &line_nums);
+                    // Parse all the vertex ref numbers on this line into all-positive indices into our vertex data. For
+                    // each one,
+                    let cur_sizes = (v_data.len(), vt_data.len(), vn_data.len());
+                    let vert_iter = parse_f(rest, cur_sizes, &line_nums);
+
+                    // How many vertices we have before push
+                    let before_push = index_buffer.len();
+
+                    // Reserve before our loop (`saturating_add(1)` borrowed from Vec's `extend` implementation).
+                    let (hint, _) = vert_iter.size_hint();
+                    index_buffer.reserve(hint.saturating_add(1));
+                    for vertices in vert_iter {
+                        index_buffer.push(vertices?);
+                    }
+
+                    // Check that we pushed at least three vertices for this face
+                    let pushed = index_buffer.len() - before_push;
+                    if pushed < 3 {
+                        return Err(ObjParseError::f_too_few(&line_nums, pushed));
+                    } else if pushed > u16::MAX as usize {
+                        return Err(ObjParseError::f_too_many(&line_nums, pushed));
+                    }
+
+                    // Trim the count down to smaller number type for memory savings; also save the material that this
+                    // face used.
+                    face_vert_counts.push(pushed as u16);
+                    face_material_map.push(curr_material);
                 },
-                "usemtl" => warn!("(unimplemented) 'usemtl' directive on {}", fmt_line_range(&line_nums)),
-                "mtllib" => warn!("(unimplemented) 'mtllib' directive on {}", fmt_line_range(&line_nums)),
+                "usemtl" => {
+                    //
+                    warn!("(unimplemented) 'usemtl' directive on {}", fmt_line_range(&line_nums));
+                },
+                "mtllib" => {
+                    // Parse mtl file.
+                    // - For each material, check if its name has already been used in `material_indices` map.
+                    // - If not, add info to `materials` list then add its index to `material_indices`.
+                    warn!("(unimplemented) 'mtllib' directive on {}", fmt_line_range(&line_nums));
+                },
                 _ => check_other(directive, &line_nums)?,
             }
         }
 
-        // debug!(
-        //     "finished parsing file {}. found {} vertices, {} normals, and {} tex-coords used by {} faces.",
-        //     path.display(),
-        //     data.vertices.len(),
-        //     data.normals.len(),
-        //     data.tex_coords.len(),
-        //     data.faces.len(),
-        // );
+        // There should be one of each of these per face.
+        assert_eq!(face_vert_counts.len(), face_material_map.len());
 
-        // Ok(data)
+        // Phase 2: Merge it all together.
+        // --------------------------------------------------------------------
+        // Time to index the shit outta these vectors, homie.
 
-        todo!();
+        let mut final_vertex_data = Vec::new(); // all vertex attributes, after they've been merged through indexing
+        let mut final_vertex_map = HashMap::new(); // where to find merged-attributes based on the triples of indices
+
+        // Final map of materials -> list of indices before we merge them into a list of `ObjGroup` structs
+        let mut mtl_idx_groups: HashMap<Option<NonZeroU16>, Vec<GLuint>> = HashMap::new();
+
+        for (vert_count, material_index) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
+            // This loop runs once per face
+            // ----------------------------------------------------------------
+
+            let vert_count = vert_count as usize; // back to usize for indexing
+            let vert_indices = &index_buffer[..vert_count];
+
+            // Ensure we can push this many more vertices into our main buffer and still be able to index into it with
+            // `GL_UNSIGNED_INT`:
+            if final_vertex_data.len() + vert_count >= GLuint::MAX as usize {
+                return Err(ObjParseError::VertexDataOverflow);
+            }
+
+            // We know from our `pushed < 3` check earlier that each section of vertices is *at least* three. So before
+            // we loop over all the vertices of this face, check if we need to compute the surface normal (to use for
+            // all vertex normals) for this face using the first three (NB: tuple order is `v/vt/vn`).
+            let surf_norm = if vert_indices[0].2.is_none() {
+                // This'll break if a face defines more than 3 vertices that aren't coplanar; but that's not exactly my
+                // fault.
+                let a = v_data[vert_indices[0].0.get() - 1];
+                let b = v_data[vert_indices[1].0.get() - 1];
+                let c = v_data[vert_indices[2].0.get() - 1];
+                let ab = b - a;
+                let ac = c - a;
+                Some(ab.cross(&ac))
+            } else {
+                None
+            };
+
+            // Grab the list that this face is going to push its indices into
+            let index_list = mtl_idx_groups.entry(material_index).or_default();
+
+            // Now that we've done some double checking on the vertices for this face, drain them from the vector. For
+            // each vertex in this face, check if we've already added it (ie. this particular combo of indices) to the
+            // final buffer. We can re-used it if we have.
+            for vert_indices in index_buffer.drain(..vert_count) {
+                // Try and locate its index, and if we haven't added it before, insert our vertex data and
+                let v_data_idx = *final_vertex_map.entry(vert_indices).or_insert_with(|| {
+                    // Don't forget to undo our 1-based vertex indices. At least one of `face_normal` (from earlier
+                    // check) or the data from the vector will be `Some` here.
+                    let (v_idx, vt_idx, vn_idx) = vert_indices;
+                    let v = v_data[v_idx.get() - 1];
+                    let vt = vt_idx.map(|i| vt_data[i.get() - 1]).unwrap_or_default();
+                    let vn = surf_norm.or(vn_idx.map(|i| vn_data[i.get() - 1])).unwrap();
+
+                    // Push into the list and return the new spot
+                    final_vertex_data.push(ObjVertex {
+                        position: v,
+                        tex_coord: vt,
+                        normal: vn,
+                    });
+
+                    // Already did a bounds-check earlier, so we know this index of our freshly pushed vertex won't
+                    // overflow a `u32`.
+                    (final_vertex_data.len() - 1) as GLuint
+                });
+
+                // This index is what gets added to this group.
+                index_list.push(v_data_idx);
+            }
+
+            // End of our face, so we want to restart our primitive rendering, too.
+            index_list.push(PRIMITIVE_RESTART);
+        }
+
+        // I don't even wanna think about how much heap allocation there is in this function... oh well, it's probably
+        // still less than there'd be in JavaScript, lol.
+
+        // Convert our indices into boxed slices, and finally grab the actual material values.
+        Ok(ObjModel {
+            vertex_data: final_vertex_data.into(),
+            elements: mtl_idx_groups
+                .into_iter()
+                .map(|(mtl_idx, all_indices)| ObjGroup {
+                    indices: all_indices.into_boxed_slice(),
+                    material: mtl_idx.map(|i| parsed_materials[(i.get() - 1) as usize].clone()),
+                })
+                .collect(),
+        })
     }
 }
 
@@ -266,11 +381,11 @@ fn parse_vt(text: &str, lines: &LineRange) -> Result<Vec2, ObjParseError> {
 
 
 /// Parses the body of an `f` directive from an OBJ file.
-fn parse_f<'a, 'b>(
+fn parse_f<'a>(
     text: &'a str,
     current_counts: (usize, usize, usize),
     lines: &'a LineRange,
-) -> impl Iterator<Item = Result<(usize, Option<usize>, Option<usize>), ObjParseError>> + 'a {
+) -> impl Iterator<Item = Result<FaceIndices, ObjParseError>> + 'a {
     /// Each face is a list of indices into vertex data. Indices may be of the form `v`, `v/vt`, `v/vt/vn`, or `v//vn`.
     ///
     /// Each element in the list must be of the same form. Additionally, indices are 1-based; they may also be negative.
@@ -308,17 +423,17 @@ fn parse_f<'a, 'b>(
         // negative/relative indexing. `vec_len` and `vec_name` are used for error-checking.
         let parse_v_ref = |ref_str: &str, vec_len: usize, vec_name: &'static str| {
             match ref_str.parse::<isize>() {
-                // If it's positive, subtract 1 to get the 0-based index; ensure it doesn't overflow our list.
-                Ok(i) if i > 0 => match usize::try_from(i).unwrap() - 1 {
-                    i if i < vec_len => Ok(i),
+                // If it's positive, all we have to do is ensure it doesn't overflow our list.
+                Ok(i) if i > 0 => match usize::try_from(i).unwrap() {
+                    i if i - 1 < vec_len => Ok(NonZeroUsize::new(i).unwrap()),
                     _ => Err(ObjParseError::f_index_range(lines, vec_name, i, vec_len)),
                 },
-                // If it's negative, subtract it from the list size; ensure it doesn't wrap around below zero.
+                // If it's negative, subtract it from the list size to get 0-based index; ensure it won't underflow.
                 Ok(i) if i < 0 => match vec_len.checked_sub((-i).try_into().unwrap()) {
-                    Some(i) => Ok(i),
+                    Some(i) => Ok(NonZeroUsize::new(i + 1).unwrap()), // Add 1 to return to 1-based for consistency.
                     None => Err(ObjParseError::f_index_range(lines, vec_name, i, vec_len)),
                 },
-                // If it's neither, it's zero; out of range (OBJ vertex references are 1-based indices).
+                // If it's neither, it's zero, and out of range.
                 Ok(i) => Err(ObjParseError::f_index_range(lines, vec_name, i, vec_len)),
                 Err(_) => Err(ObjParseError::f_parse_err(lines)),
             }

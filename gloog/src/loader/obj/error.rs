@@ -1,5 +1,6 @@
 use std::io;
 
+use gloog_core::bindings::types::GLuint;
 use thiserror::Error;
 
 use super::super::{fmt_line_range, LineRange};
@@ -29,11 +30,17 @@ pub enum ObjParseError {
         max: usize,
     },
 
+    #[error("too many unique vertex attributes, maximum number is {}", GLuint::MAX - 1)]
+    VertexDataOverflow,
+
     #[error("'f' directive on {} has invalid vertex index", fmt_line_range(.lines))]
     FaceIndexParseError { lines: LineRange },
 
-    #[error("'f' directive on {} has {n} vertices, but requires at least 3", fmt_line_range(.lines))]
+    #[error("'f' directive on {} has {n} vertices, but minimum is 3", fmt_line_range(.lines))]
     FaceTooFewIndices { lines: LineRange, n: usize },
+
+    #[error("'f' directive on {} has {n} vertices, but maximum is {}", fmt_line_range(.lines), u16::MAX)]
+    FaceTooManyIndices { lines: LineRange, n: usize },
 
     #[error("'f' directive on {} has inconsistent v/vt/vn configuration", fmt_line_range(.lines))]
     FaceMismatchedIndexConfig { lines: LineRange },
@@ -90,6 +97,11 @@ impl ObjParseError {
 
     #[inline(always)]
     pub(super) const fn f_too_few(lines: &LineRange, n: usize) -> Self {
+        let lines = clone_range(lines);
+        Self::FaceTooFewIndices { lines, n }
+    }
+
+    pub(super) const fn f_too_many(lines: &LineRange, n: usize) -> Self {
         let lines = clone_range(lines);
         Self::FaceTooFewIndices { lines, n }
     }
