@@ -7,7 +7,7 @@ use super::super::{fmt_line_range, LineRange};
 
 
 #[derive(Error, Debug)]
-pub enum ObjParseError {
+pub enum ObjLoadError {
     #[error("failed to read from file:\n{0:?}")]
     IOError(#[from] io::Error),
 
@@ -58,19 +58,19 @@ pub enum ObjParseError {
 }
 
 
-impl<T> From<ObjParseError> for Result<T, ObjParseError> {
-    fn from(value: ObjParseError) -> Self {
+impl<T> From<ObjLoadError> for Result<T, ObjLoadError> {
+    fn from(value: ObjLoadError) -> Self {
         Err(value)
     }
 }
 
-/// [`Range`] is not [`Copy`], and [`Clone`] is not `const`.
+/// [`Range`][std::ops::Range] is not [`Copy`], and [`Clone`] is not `const`.
 const fn clone_range(r: &LineRange) -> LineRange {
     r.start..r.end
 }
 
 // Helper functions for quick construction of error values
-impl ObjParseError {
+impl ObjLoadError {
     #[inline(always)]
     pub(super) const fn v_parse_err(lines: &LineRange, directive: &'static str) -> Self {
         let lines = clone_range(lines);
