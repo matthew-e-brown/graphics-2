@@ -3,9 +3,10 @@ use std::io;
 use gloog_core::bindings::types::GLuint;
 use thiserror::Error;
 
-use super::super::{fmt_line_range, LineRange};
+use crate::loader::{fmt_line_range, LineRange};
 
 
+#[rustfmt::skip]
 #[derive(Error, Debug)]
 pub enum ObjLoadError {
     #[error("failed to read from file:\n{0:?}")]
@@ -15,20 +16,10 @@ pub enum ObjLoadError {
     VertexParseError { lines: LineRange, directive: &'static str },
 
     #[error("'{directive}' directive on {} has {n} of required {min} floats", fmt_line_range(.lines))]
-    VertexTooSmall {
-        lines: LineRange,
-        directive: &'static str,
-        n: usize,
-        min: usize,
-    },
+    VertexTooSmall { lines: LineRange, directive: &'static str, n: usize, min: usize },
 
     #[error("'{directive}' directive on {} has {n} floats, but max is {max}", fmt_line_range(.lines))]
-    VertexTooLarge {
-        lines: LineRange,
-        directive: &'static str,
-        n: usize,
-        max: usize,
-    },
+    VertexTooLarge { lines: LineRange, directive: &'static str, n: usize, max: usize },
 
     #[error("too many unique vertex attributes, maximum number is {}", GLuint::MAX - 1)]
     VertexDataOverflow,
@@ -46,12 +37,7 @@ pub enum ObjLoadError {
     FaceMismatchedIndexConfig { lines: LineRange },
 
     #[error("'f' directive on {} references vertex data '{list}' at index, out of range for list of length {len}", fmt_line_range(.lines))]
-    FaceIndexOutOfRange {
-        lines: LineRange,
-        list: &'static str,
-        idx: isize,
-        len: usize,
-    },
+    FaceIndexOutOfRange { lines: LineRange, list: &'static str, idx: isize, len: usize },
 
     #[error("unknown directive '{directive}' on {}", fmt_line_range(.lines))]
     UnknownDirective { lines: LineRange, directive: String },

@@ -15,7 +15,7 @@ mod mtl;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::num::{NonZeroU16, NonZeroUsize, ParseFloatError};
+use std::num::{NonZeroUsize, ParseFloatError};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -35,7 +35,6 @@ use crate::loader::{fmt_line_range, lines_escaped, LineRange};
 const PRIMITIVE_RESTART: GLuint = GLuint::MAX;
 
 
-
 /// A drawable model comprised of data from an OBJ file.
 ///
 /// The raw data behind this struct are behind [`Arc`] pointers, so this struct can be cloned cheaply without the need
@@ -43,44 +42,35 @@ const PRIMITIVE_RESTART: GLuint = GLuint::MAX;
 #[derive(Debug, Clone)]
 pub struct ObjModel {
     /// Individual groups of faces which share a common material (and thus will share a single draw call). Each group
-    /// contains a buffer of indices which index into [`Self::vertex_data`] using `glDrawElements`.
-    elements: Arc<[ObjGroup]>,
-    /// All raw vertex attribute data for this model. This data is referenced through indices in [`Self::elements`].
-    vertex_data: Arc<[ObjVertex]>,
+    /// contains a buffer of indices which index into [`Self::data`] using `glDrawElements`.
+    groups: Arc<[ObjGroup]>,
+    /// All raw vertex attribute data for this model. This data is referenced through indices in [`Self::groups`].
+    data: Arc<[ObjVertex]>,
 }
 
-/// Specifies a series of elements to be drawn with a common material.
+/// Holds a group of faces to be drawn with a common material.
 ///
-/// For example:
-///
-/// ```
-/// indices = [[8, 9, 1, 2], [8, 1, 2], [0, 4, 5, 8, 1, 3]];
-/// counts = [4, 3, 6];
-/// ```
-///
-/// This setup will draw one combined polygon with vertices 8, 9, 1, and 2; one with vertices 8, 1, and 2, and one with
-/// 0, 4, 5, 8, 1, and 3.
+/// Comprised of material information and a list of indices
 #[derive(Debug)]
-struct ObjGroup {
+pub struct ObjGroup {
     /// Contains information for how to set uniform information for this group's draw call. for this particular group of
     /// faces. A value of `None` means that the "default" material should be used, whatever it may be.
-    material: Option<ObjMaterial>,
-    /// A 2D array, specifically with extra pointer indirection to be compatible with `glMultiDrawElements`'s parameter
-    /// of `const void * const *`.
+    pub material: Option<ObjMaterial>,
+    /// An array of indices to be drawn with `glDrawElements`, which indexes into the parent [`ObjModel`]'s data.
     indices: Box<[GLuint]>,
 }
 
 /// Used to configure uniforms before executing draw call.
 #[derive(Debug, Default, Clone)]
 pub struct ObjMaterial {
-    pub ka: Vec3,
-    pub kd: Vec3,
-    pub ks: Vec3,
-    pub ns: f32,
-    pub opacity: f32,
-    // todo: should these be options instead of just letting them be defaulted to zeroes?
     // todo: texture maps
-    // todo: any other missing fields from MTL spec?
+    pub diffuse: Vec3,
+    pub ambient: Vec3,
+    pub specular: Vec3,
+    pub spec_pow: f32,
+    /// Parsed from the "dissolve" statement, which relates to some more advanced material and illumination properties;
+    /// we only support basic Blinn-Phong, so we're just gonna interpret it as an alpha channel for the final color.
+    pub opacity: f32,
 }
 
 #[repr(C)]
@@ -98,7 +88,7 @@ type FaceIndices = (NonZeroUsize, Option<NonZeroUsize>, Option<NonZeroUsize>);
 
 
 impl ObjModel {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, ObjLoadError> {
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ObjLoadError> {
         let path = path.as_ref();
         let file = BufReader::new(File::open(path)?);
 
@@ -109,18 +99,14 @@ impl ObjModel {
         let mut vt_data = Vec::new(); // Texture coordinates from `vt` statements
         let mut vn_data = Vec::new(); // Vertex normals from `vn` statements
 
-        let mut parsed_materials: Vec<ObjMaterial> = Vec::new(); // List of all materials
-        let mut material_indices: HashMap<Box<str>, NonZeroU16> = HashMap::new(); // material name -> index in vector
-        let mut curr_material: Option<NonZeroU16> = None; // Index of currently active material
+        let mut parsed_materials = Vec::<ObjMaterial>::new(); // List of all materials
+        let mut material_indices = HashMap::<Box<str>, usize>::new(); // Map of text name to index of material in list
+        let mut curr_material = None; // Index of currently active material
 
         // List of faces and which materials they use
-        let mut index_buffer = Vec::new(); // List of all of the FaceIndices (each makes one final vertex)
+        let mut face_idx_buffer = Vec::new(); // List of all of the `FaceIndices` (each makes one final vertex)
         let mut face_vert_counts = Vec::new(); // Index `i` says how many verts face `i` uses
         let mut face_material_map = Vec::new(); // Index `i` names which material face `i` uses (as an index).
-
-        // ok... I've got a big-ass list of indices that I'm indexing by storing another list of indices that index into
-        // that list of indices (which index into my other big-ass lists of vertex data). Totally not confusing... Let's
-        // just call the indices into vertex data "vertices," that'll make things easier.
 
         for line_result in lines_escaped(file) {
             let (line_nums, line) = line_result?;
@@ -143,30 +129,29 @@ impl ObjModel {
             // zero-length, and we did so after trimming, which guarantees that there is at least one thing
             // pre-whitespace).
             let directive = line.split_whitespace().nth(0).unwrap();
-            let rest = line[directive.len()..].trim_start(); // rest of the line
+            let line = line[directive.len()..].trim_start(); // rest of the line
 
             match directive {
-                "v" => v_data.push(parse_v(rest, &line_nums)?),
-                "vt" => vt_data.push(parse_vt(rest, &line_nums)?),
-                "vn" => vn_data.push(parse_vn(rest, &line_nums)?),
+                "v" => v_data.push(parse_v(line, &line_nums)?),
+                "vt" => vt_data.push(parse_vt(line, &line_nums)?),
+                "vn" => vn_data.push(parse_vn(line, &line_nums)?),
                 "f" => {
-                    // Parse all the vertex ref numbers on this line into all-positive indices into our vertex data. For
-                    // each one,
+                    // Parse all the vertex reference numbers on this line into indices into our vertex data. All are
                     let cur_sizes = (v_data.len(), vt_data.len(), vn_data.len());
-                    let vert_iter = parse_f(rest, cur_sizes, &line_nums);
+                    let vert_iter = parse_f(line, cur_sizes, &line_nums);
 
                     // How many vertices we have before push
-                    let before_push = index_buffer.len();
+                    let before_push = face_idx_buffer.len();
 
                     // Reserve before our loop (`saturating_add(1)` borrowed from Vec's `extend` implementation).
-                    let (hint, _) = vert_iter.size_hint();
-                    index_buffer.reserve(hint.saturating_add(1));
+                    face_idx_buffer.reserve(vert_iter.size_hint().0.saturating_add(1));
                     for vertices in vert_iter {
-                        index_buffer.push(vertices?);
+                        face_idx_buffer.push(vertices?);
                     }
 
-                    // Check that we pushed at least three vertices for this face
-                    let pushed = index_buffer.len() - before_push;
+                    // Check that we pushed at least three vertices for this face, also double check we don't have too
+                    // many elements for this face (since we're using a u16 to reduce the footprint of this function).
+                    let pushed = face_idx_buffer.len() - before_push;
                     if pushed < 3 {
                         return Err(ObjLoadError::f_too_few(&line_nums, pushed));
                     } else if pushed > u16::MAX as usize {
@@ -179,13 +164,15 @@ impl ObjModel {
                     face_material_map.push(curr_material);
                 },
                 "usemtl" => {
-                    //
+                    // - Check the name-to-index map, update current material if found
+                    // - Otherwise... crash. lol
                     warn!("(unimplemented) 'usemtl' directive on {}", fmt_line_range(&line_nums));
                 },
                 "mtllib" => {
-                    // Parse mtl file.
-                    // - For each material, check if its name has already been used in `material_indices` map.
-                    // - If not, add info to `materials` list then add its index to `material_indices`.
+                    // Parse mtl file:
+                    // - For each material, check if its name already appears in the index map
+                    // - If not, parse it and add it to the list, and add its index to the map
+                    // - Don't forget that `mtllib` statements may have multiple filenames specified
                     warn!("(unimplemented) 'mtllib' directive on {}", fmt_line_range(&line_nums));
                 },
                 _ => check_other(directive, &line_nums)?,
@@ -195,26 +182,31 @@ impl ObjModel {
         // There should be one of each of these per face.
         assert_eq!(face_vert_counts.len(), face_material_map.len());
 
-        // Phase 2: Merge it all together.
+        // Phase 2: Merging it all together
         // --------------------------------------------------------------------
-        // Time to index the shit outta these vectors, homie.
 
-        let mut final_vertex_data = Vec::new(); // all vertex attributes, after they've been merged through indexing
-        let mut final_vertex_map = HashMap::new(); // where to find merged-attributes based on the triples of indices
+        // For each face, look at its `FaceIndex` (triple of position, texture, normal data) and grab the required data
+        // from the full list of vertex data. If that particular triple has been encountered before, we can re-use that
+        // index. We have to do this merging by `v/vt/vn` triple instead of per each of the constituent components
+        // because OpenGL does not support using different indices for each attribute of a vertex.
 
-        // Final map of materials -> list of indices before we merge them into a list of `ObjGroup` structs
-        let mut mtl_idx_groups: HashMap<Option<NonZeroU16>, Vec<GLuint>> = HashMap::new();
+        let mut vertex_data = Vec::new(); // Final vertex attributes after merging through face indices
+        let mut vertex_map = HashMap::new(); // Lookup table for whether or not a triple has been included yet
 
-        for (vert_count, material_index) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
+        // List of final indices into final vertex data, grouped by material (using the index of the material).
+        // Individual faces are separated only by the `PRIMITIVE_RESTART_INDEX`.
+        let mut groups: HashMap<Option<usize>, Vec<GLuint>> = HashMap::new();
+
+        for (vert_count, material_idx) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
             // This loop runs once per face
             // ----------------------------------------------------------------
 
             let vert_count = vert_count as usize; // back to usize for indexing
-            let vert_indices = &index_buffer[..vert_count];
+            let vert_indices = &face_idx_buffer[..vert_count];
 
             // Ensure we can push this many more vertices into our main buffer and still be able to index into it with
             // `GL_UNSIGNED_INT`:
-            if final_vertex_data.len() + vert_count >= GLuint::MAX as usize {
+            if vertex_data.len() + vert_count >= GLuint::MAX as usize {
                 return Err(ObjLoadError::VertexDataOverflow);
             }
 
@@ -235,35 +227,30 @@ impl ObjModel {
             };
 
             // Grab the list that this face is going to push its indices into
-            let index_list = mtl_idx_groups.entry(material_index).or_default();
+            let index_list = groups.entry(material_idx).or_default();
 
-            // Now that we've done some double checking on the vertices for this face, drain them from the vector. For
-            // each vertex in this face, check if we've already added it (ie. this particular combo of indices) to the
-            // final buffer. We can re-used it if we have.
-            for vert_indices in index_buffer.drain(..vert_count) {
-                // Try and locate its index, and if we haven't added it before, insert our vertex data and
-                let v_data_idx = *final_vertex_map.entry(vert_indices).or_insert_with(|| {
-                    // Don't forget to undo our 1-based vertex indices. At least one of `face_normal` (from earlier
-                    // check) or the data from the vector will be `Some` here.
+            // Now that we've done some double checking on the vertices for this face, drain them from the vector.
+            for vert_indices in face_idx_buffer.drain(..vert_count) {
+                // For each vertex in this face, check if we've already added its index triple to the final buffer, and
+                // push it into this group's list of indices. If not, go grab the necessary data, insert into the vertex
+                // buffer, and push the new index.
+                index_list.push(*vertex_map.entry(vert_indices).or_insert_with(|| {
+                    // Don't forget to undo the 1-based indexing before actually doing our lookups.
                     let (v_idx, vt_idx, vn_idx) = vert_indices;
-                    let v = v_data[v_idx.get() - 1];
-                    let vt = vt_idx.map(|i| vt_data[i.get() - 1]).unwrap_or_default();
-                    let vn = surf_norm.or(vn_idx.map(|i| vn_data[i.get() - 1])).unwrap();
 
-                    // Push into the list and return the new spot
-                    final_vertex_data.push(ObjVertex {
+                    let v = v_data[v_idx.get() - 1]; // always present
+                    let vt = vt_idx.map(|i| vt_data[i.get() - 1]).unwrap_or_default(); // just use a (0,0) vector
+                    let vn = vn_idx.map(|i| vn_data[i.get() - 1]).or(surf_norm).unwrap(); // at least one will be Some
+
+                    vertex_data.push(ObjVertex {
                         position: v,
                         tex_coord: vt,
                         normal: vn,
                     });
 
-                    // Already did a bounds-check earlier, so we know this index of our freshly pushed vertex won't
-                    // overflow a `u32`.
-                    (final_vertex_data.len() - 1) as GLuint
-                });
-
-                // This index is what gets added to this group.
-                index_list.push(v_data_idx);
+                    // Already did a bounds-check earlier so we know this vertex's index won't overflow a `u32`
+                    (vertex_data.len() - 1) as GLuint
+                }));
             }
 
             // End of our face, so we want to restart our primitive rendering, too.
@@ -271,16 +258,16 @@ impl ObjModel {
         }
 
         // I don't even wanna think about how much heap allocation there is in this function... oh well, it's probably
-        // still less than there'd be in JavaScript, lol.
+        // still less than there'd be in something like JavaScript lol.
 
         // Convert our indices into boxed slices, and finally grab the actual material values.
         Ok(ObjModel {
-            vertex_data: final_vertex_data.into(),
-            elements: mtl_idx_groups
+            data: vertex_data.into(),
+            groups: groups
                 .into_iter()
-                .map(|(mtl_idx, all_indices)| ObjGroup {
-                    indices: all_indices.into_boxed_slice(),
-                    material: mtl_idx.map(|i| parsed_materials[(i.get() - 1) as usize].clone()),
+                .map(|(material_idx, indices)| ObjGroup {
+                    indices: indices.into_boxed_slice(),
+                    material: material_idx.map(|i| parsed_materials[i].clone()),
                 })
                 .collect(),
         })
@@ -379,22 +366,17 @@ fn parse_f<'a>(
     current_counts: (usize, usize, usize),
     lines: &'a LineRange,
 ) -> impl Iterator<Item = Result<FaceIndices, ObjLoadError>> + 'a {
-    /// Each face is a list of indices into vertex data. Indices may be of the form `v`, `v/vt`, `v/vt/vn`, or `v//vn`.
+    /// Each face is comprised of a list of indices into vertex data, each one specifying one vertex in the face. It may
+    /// be comprised of just position data, but may also include indices into texture and normal-data.
     ///
-    /// Each element in the list must be of the same form. Additionally, indices are 1-based; they may also be negative.
-    /// Negative indices represent an index relative to the _current_ end of the list (ie., the most recently parsed
-    /// vertex). There must be at least three vertices for each face.
+    /// Each element in the list must be of the same form, so we need to track which format this specific face's
+    /// vertices use.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum RefShape {
-        /// `v` - This face contains just `v` references.
-        Single,
-        /// `v/vt` - This face contains `v` and `vt` references separated by a slash.
-        Double,
-        /// `v/vt/vn` - This face contains `v`, `vt`, and `vn` references separated by two slashes.
-        Triple,
-        /// `v//vn` - This face contains `v` and `vn` references, with nothing between two slashes (where the `vt`
-        /// reference would usually go).
-        NoTex,
+        Single, // `v`
+        Double, // `v/vt`
+        Triple, // `v/vt/vn`
+        NoTex,  // `v//vn`
     }
 
     impl RefShape {
@@ -416,17 +398,17 @@ fn parse_f<'a>(
         // negative/relative indexing. `vec_len` and `vec_name` are used for error-checking.
         let parse_v_ref = |ref_str: &str, vec_len: usize, vec_name: &'static str| {
             match ref_str.parse::<isize>() {
-                // If it's positive, all we have to do is ensure it doesn't overflow our list.
+                // Positive: check for overflow.
                 Ok(i) if i > 0 => match usize::try_from(i).unwrap() {
                     i if i - 1 < vec_len => Ok(NonZeroUsize::new(i).unwrap()),
                     _ => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 },
-                // If it's negative, subtract it from the list size to get 0-based index; ensure it won't underflow.
+                // Negative: subtract it from list size, check for overflow, and add one to return to 1-based index.
                 Ok(i) if i < 0 => match vec_len.checked_sub((-i).try_into().unwrap()) {
-                    Some(i) => Ok(NonZeroUsize::new(i + 1).unwrap()), // Add 1 to return to 1-based for consistency.
+                    Some(i) => Ok(NonZeroUsize::new(i + 1).unwrap()),
                     None => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 },
-                // If it's neither, it's zero, and out of range.
+                // Zero: out of range.
                 Ok(i) => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 Err(_) => Err(ObjLoadError::f_parse_err(lines)),
             }
