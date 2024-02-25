@@ -1,17 +1,24 @@
 #version 460 core
 
-layout (location = 0) in vec3 a_position;
-layout (location = 1) in vec3 a_color;
+layout (location = 0) in vec3 aPosition;
+layout (location = 1) in vec3 aNormal;
+layout (location = 2) in vec2 aTexCoord;
 
-uniform mat4 u_model_matrix;
-uniform mat4 u_view_matrix;
-uniform mat4 u_proj_matrix;
+uniform mat4 uModelMatrix;
+uniform mat4 uViewMatrix;
+uniform mat4 uProjMatrix;
+uniform mat3 uNormMatrix;
 
-out vec3 vert_color;
+out vec3 vPosition;
+out vec3 vNormal;
+out vec2 vTexCoord;
 
 void main() {
-    // OpenGL matrices, like ours, are column-major; but, `*` operators are not overloaded, so `Mv`
-    // for multiplying 4x4 * 4x1 is written `vM`.
-    gl_Position = u_proj_matrix * u_view_matrix * u_model_matrix * vec4(a_position, 1.0);
-    vert_color = a_color;
+    vec4 aPos4 = vec4(aPosition, 1.0);
+
+    vPosition = vec3(uViewMatrix * uModelMatrix * aPos4);
+    vNormal = uNormMatrix * aNormal;
+    vTexCoord = aTexCoord;
+
+    gl_Position = uProjMatrix * uViewMatrix * uModelMatrix * aPos4;
 }

@@ -133,10 +133,27 @@ pub struct ObjVertex {
     normal: Vec3,
 }
 
+macro_rules! vertex_offset {
+    ($field:ident) => {{
+        let vert = ObjVertex {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            tex_coord: Vec2::new(0.0, 0.0),
+            normal: Vec3::new(0.0, 0.0, 0.0),
+        };
 
-/// A triple of indices into the three different sets of vertex data. Indices are 1-based to allow the optional values
-/// to represent `None` using zero.
-type FaceIndices = (NonZeroUsize, Option<NonZeroUsize>, Option<NonZeroUsize>);
+        let base = std::ptr::from_ref(&vert) as *const u8;
+        let field = std::ptr::from_ref(&vert.$field) as *const u8;
+
+        unsafe { field.offset_from(base) as usize }
+    }};
+}
+
+impl ObjVertex {
+    pub const STRIDE: isize = std::mem::size_of::<ObjVertex>() as isize;
+    pub const OFFSET_POSITION: usize = vertex_offset!(position);
+    pub const OFFSET_TEX_COORD: usize = vertex_offset!(tex_coord);
+    pub const OFFSET_NORMAL: usize = vertex_offset!(normal);
+}
 
 
 /// Grab everything in a line up to the first `#` (and also trim the starts and ends).
