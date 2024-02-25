@@ -8,6 +8,11 @@ gloog-core = { path = "../gloog-core", version = "*" }
 gloog-math = { path = "../gloog-math", version = "*" }
 
 arrayvec = "0.7.4"
+bytemuck = "1.13.1"
 glfw = "0.52.0"
 log = "0.4.20"
 thiserror = "1.0.57"
+
+[dependencies.image]
+version = "0.24.9"
+features = ["jpeg", "png", "bmp", "ico", "tiff", "webp"]

@@ -17,22 +17,54 @@ use std::fs::File;
 use std::io::BufReader;
 use std::num::{NonZeroUsize, ParseFloatError};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arrayvec::ArrayVec;
 use gloog_core::bindings::types::GLuint;
 use gloog_math::{Vec2, Vec3};
-use log::{debug, log, trace, warn};
+use image::{ImageBuffer, Luma, Rgba};
+use log::{debug, log, trace};
 
-use self::error::ObjLoadError;
-use crate::loader::{fmt_line_range, lines_escaped, LineRange};
+use self::error::{ObjError, ObjResult};
+use crate::loader::obj::mtl::parse_mtl_file;
+use crate::loader::{lines_escaped, LineRange};
 
 
-// cspell:words curv interp stech ctech scrv cstype bmat usemtl mtllib maplib usemap
+// cspell:words curv interp stech ctech scrv cstype bmat newmtl usemtl mtllib maplib usemap
 
 
 /// The constant that is used for primitive restarting in OpenGL.
 const PRIMITIVE_RESTART: GLuint = GLuint::MAX;
+
+
+/// A triple of indices into the three different sets of vertex data. Indices are 1-based to allow the optional values
+/// to represent `None` using zero.
+type FaceIndices = (NonZeroUsize, Option<NonZeroUsize>, Option<NonZeroUsize>);
+
+/// A 32-bit RGBA image.
+///
+/// This type uses an [`Arc`] byte-slice as its backing store to allow for the data to be cached. Images are cached
+/// using [`Weak`] references, though, and so they will not result in loaded textures staying in memory forever.
+type RgbaImage = ImageBuffer<Rgba<u8>, Arc<[u8]>>;
+
+/// An 8-bit grayscale image.
+///
+/// See [`RgbaImage`] for a note on the use of `Arc`.
+type GrayImage = ImageBuffer<Luma<u8>, Arc<[u8]>>;
+
+type CachedRgbaImage = ImageBuffer<Rgba<u8>, Weak<[u8]>>;
+type CachedGrayImage = ImageBuffer<Luma<u8>, Weak<[u8]>>;
+
+/// A wrapper for the various possible image files.
+#[derive(Debug, Default)]
+pub struct CachedImage {
+    /// The value for the cached filename when it is being used for RGBA images, like ambient, diffuse, or specular
+    /// maps.
+    pub rgba: Option<CachedRgbaImage>,
+    /// The value for the cached filename when it is being used for grayscale images, like specular exponents and alpha
+    /// maps.
+    pub gray: Option<CachedGrayImage>,
+}
 
 
 /// A drawable model comprised of data from an OBJ file.
@@ -53,29 +85,49 @@ pub struct ObjModel {
 /// Comprised of material information and a list of indices
 #[derive(Debug)]
 pub struct ObjGroup {
-    /// Contains information for how to set uniform information for this group's draw call. for this particular group of
-    /// faces. A value of `None` means that the "default" material should be used, whatever it may be.
-    pub material: Option<ObjMaterial>,
+    /// Contains information for how to set uniform information for this group's draw call.
+    pub material: ObjMaterial,
     /// An array of indices to be drawn with `glDrawElements`, which indexes into the parent [`ObjModel`]'s data.
     indices: Box<[GLuint]>,
+}
+
+impl ObjModel {
+    pub fn vertex_buffer(&self) -> &[ObjVertex] {
+        &self.data
+    }
+
+    pub fn groups(&self) -> &[ObjGroup] {
+        &self.groups
+    }
+}
+
+impl ObjGroup {
+    pub fn index_buffer(&self) -> &[GLuint] {
+        &self.indices
+    }
 }
 
 /// Used to configure uniforms before executing draw call.
 #[derive(Debug, Default, Clone)]
 pub struct ObjMaterial {
-    // todo: texture maps
-    pub diffuse: Vec3,
-    pub ambient: Vec3,
-    pub specular: Vec3,
-    pub spec_pow: f32,
-    /// Parsed from the "dissolve" statement, which relates to some more advanced material and illumination properties;
-    /// we only support basic Blinn-Phong, so we're just gonna interpret it as an alpha channel for the final color.
-    pub opacity: f32,
+    pub diffuse: Option<Vec3>,           // `Kd`
+    pub ambient: Option<Vec3>,           // `Ka`
+    pub specular: Option<Vec3>,          // `Ks`
+    pub spec_pow: Option<f32>,           // `Ns`
+    pub alpha: Option<f32>,              // `d` or `Tr`
+    pub map_diffuse: Option<RgbaImage>,  // `map_Kd`
+    pub map_ambient: Option<RgbaImage>,  // `map_Ka`
+    pub map_specular: Option<RgbaImage>, // `map_Ks`
+    pub map_spec_pow: Option<GrayImage>, // `map_Ns`
+    pub map_alpha: Option<GrayImage>,    // `map_d`
+    pub map_bump: Option<RgbaImage>,     // `bump` or `map_bump`
 }
 
+
+/// A set of vertex attributes for a basic vertex.
 #[repr(C)]
 #[derive(Debug, Clone)]
-struct ObjVertex {
+pub struct ObjVertex {
     position: Vec3,
     tex_coord: Vec2,
     normal: Vec3,
@@ -87,10 +139,31 @@ struct ObjVertex {
 type FaceIndices = (NonZeroUsize, Option<NonZeroUsize>, Option<NonZeroUsize>);
 
 
+/// Grab everything in a line up to the first `#` (and also trim the starts and ends).
+fn trim_comment(line: &str) -> &str {
+    match line.find('#') {
+        Some(i) => line[0..i].trim(),
+        None => line[0..].trim(),
+    }
+}
+
 impl ObjModel {
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, ObjLoadError> {
+    pub fn from_file(
+        path: impl AsRef<Path>,
+        texture_cache: Option<&mut HashMap<Box<str>, CachedImage>>,
+    ) -> ObjResult<Self> {
         let path = path.as_ref();
         let file = BufReader::new(File::open(path)?);
+
+        // If we aren't given a texture cache, we need our own just for the local runtime of this function. We don't
+        // need to bother initializing it if we were given one, so we delay the initialization until the check.
+        let mut local_cache;
+        let texture_cache = if let Some(passed) = texture_cache {
+            passed
+        } else {
+            local_cache = HashMap::new();
+            &mut local_cache
+        };
 
         // Phase 1: Gathering data
         // --------------------------------------------------------------------
@@ -99,8 +172,8 @@ impl ObjModel {
         let mut vt_data = Vec::new(); // Texture coordinates from `vt` statements
         let mut vn_data = Vec::new(); // Vertex normals from `vn` statements
 
-        let mut parsed_materials = Vec::<ObjMaterial>::new(); // List of all materials
-        let mut material_indices = HashMap::<Box<str>, usize>::new(); // Map of text name to index of material in list
+        let mut parsed_materials = Vec::new(); // List of all materials
+        let mut material_indices = HashMap::new(); // Map of text name to index of material in list
         let mut curr_material = None; // Index of currently active material
 
         // List of faces and which materials they use
@@ -110,13 +183,7 @@ impl ObjModel {
 
         for line_result in lines_escaped(file) {
             let (line_nums, line) = line_result?;
-
-            // Trim lines, ignoring comments
-            let line = {
-                let before_hash = line.find('#').map(|i| 0..i).unwrap_or(0..line.len());
-                let uncommented = &line[before_hash];
-                uncommented.trim()
-            };
+            let line = trim_comment(&line);
 
             // If our line is empty after removing the comment, we can ignore it
             if line.len() == 0 {
@@ -153,9 +220,9 @@ impl ObjModel {
                     // many elements for this face (since we're using a u16 to reduce the footprint of this function).
                     let pushed = face_idx_buffer.len() - before_push;
                     if pushed < 3 {
-                        return Err(ObjLoadError::f_too_few(&line_nums, pushed));
+                        return Err(ObjError::f_too_few(&line_nums, pushed));
                     } else if pushed > u16::MAX as usize {
-                        return Err(ObjLoadError::f_too_many(&line_nums, pushed));
+                        return Err(ObjError::f_too_many(&line_nums, pushed));
                     }
 
                     // Trim the count down to smaller number type for memory savings; also save the material that this
@@ -164,16 +231,22 @@ impl ObjModel {
                     face_material_map.push(curr_material);
                 },
                 "usemtl" => {
-                    // - Check the name-to-index map, update current material if found
-                    // - Otherwise... crash. lol
-                    warn!("(unimplemented) 'usemtl' directive on {}", fmt_line_range(&line_nums));
+                    match material_indices.get(line) {
+                        // `newmtl` and `usemtl` statements aren't supposed to support spaces, but who cares. The line
+                        // is already trimmed and comments ignored, so we can just take the remainder of the line as the
+                        // new name.
+                        Some(idx) => curr_material = Some(*idx),
+                        None => return Err(ObjError::unknown_mtl(&line_nums, line)),
+                    }
                 },
                 "mtllib" => {
-                    // Parse mtl file:
-                    // - For each material, check if its name already appears in the index map
-                    // - If not, parse it and add it to the list, and add its index to the map
-                    // - Don't forget that `mtllib` statements may have multiple filenames specified
-                    warn!("(unimplemented) 'mtllib' directive on {}", fmt_line_range(&line_nums));
+                    // Don't forget that `mtllib` statements may have multiple filenames specified
+                    for rel_path in line.split_whitespace() {
+                        // Our base path is guaranteed to be a file (since we're in the middle of reading it), so
+                        // `parent` is the directory.
+                        let mtl_path = path.parent().unwrap().join(rel_path);
+                        parse_mtl_file(mtl_path, &mut parsed_materials, &mut material_indices, texture_cache)?;
+                    }
                 },
                 _ => check_other(directive, &line_nums)?,
             }
@@ -195,7 +268,7 @@ impl ObjModel {
 
         // List of final indices into final vertex data, grouped by material (using the index of the material).
         // Individual faces are separated only by the `PRIMITIVE_RESTART_INDEX`.
-        let mut groups: HashMap<Option<usize>, Vec<GLuint>> = HashMap::new();
+        let mut groups = HashMap::new();
 
         for (vert_count, material_idx) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
             // This loop runs once per face
@@ -207,7 +280,7 @@ impl ObjModel {
             // Ensure we can push this many more vertices into our main buffer and still be able to index into it with
             // `GL_UNSIGNED_INT`:
             if vertex_data.len() + vert_count >= GLuint::MAX as usize {
-                return Err(ObjLoadError::VertexDataOverflow);
+                return Err(ObjError::VertexDataOverflow);
             }
 
             // We know from our `pushed < 3` check earlier that each section of vertices is *at least* three. So before
@@ -227,7 +300,7 @@ impl ObjModel {
             };
 
             // Grab the list that this face is going to push its indices into
-            let index_list = groups.entry(material_idx).or_default();
+            let index_list = groups.entry(material_idx).or_insert_with(|| Vec::new());
 
             // Now that we've done some double checking on the vertices for this face, drain them from the vector.
             for vert_indices in face_idx_buffer.drain(..vert_count) {
@@ -265,9 +338,9 @@ impl ObjModel {
             data: vertex_data.into(),
             groups: groups
                 .into_iter()
-                .map(|(material_idx, indices)| ObjGroup {
+                .map(|(material, indices)| ObjGroup {
                     indices: indices.into_boxed_slice(),
-                    material: material_idx.map(|i| parsed_materials[i].clone()),
+                    material: material.map(|i| parsed_materials[i].clone()).unwrap_or_default(),
                 })
                 .collect(),
         })
@@ -285,13 +358,13 @@ fn read_ws_verts<const N: usize>(text: &str) -> Result<(ArrayVec<f32, N>, usize)
     Ok((floats, remaining))
 }
 
-/// Parses the body of a `v` directive from an OBJ file and inserts its resultant vector into the given list. `lines` is
-/// needed for error-reporting.
-fn parse_v(text: &str, lines: &LineRange) -> Result<Vec3, ObjLoadError> {
+
+//`lines` is used for error-reporting
+fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     // Take at most four; some files seem to specify extra `1` values after the w to force some viewers to get the
     // message (that's my guess anyways).
     let Ok((floats, remaining)) = read_ws_verts::<4>(text) else {
-        return Err(ObjLoadError::v_parse_err(lines, "v"));
+        return Err(ObjError::v_parse_err(lines, "v"));
     };
 
     // xyz are required; w is optional and defaults to 1. In OBJ, w is only used for free-form curves and surfaces:
@@ -299,9 +372,9 @@ fn parse_v(text: &str, lines: &LineRange) -> Result<Vec3, ObjLoadError> {
     // Meaning, we should never run into a case where `w` it isn't 1. If we do, simply emit a small warning/notice that
     // the file _may_ contain unsupported features and that we're ignoring it.
     if floats.len() < 3 {
-        Err(ObjLoadError::v_too_small(lines, "v", floats.len(), 3))
+        Err(ObjError::v_too_small(lines, "v", floats.len(), 3))
     } else if remaining > 0 {
-        Err(ObjLoadError::v_too_large(lines, "v", floats.len() + remaining, 4))
+        Err(ObjError::v_too_large(lines, "v", floats.len() + remaining, 4))
     } else {
         if floats.len() == 4 && floats[3] != 1.0 {
             debug!(
@@ -317,17 +390,16 @@ fn parse_v(text: &str, lines: &LineRange) -> Result<Vec3, ObjLoadError> {
     }
 }
 
-/// Parses the body of a `vn` directive from an OBJ file.
-fn parse_vn(text: &str, lines: &LineRange) -> Result<Vec3, ObjLoadError> {
+fn parse_vn(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     // Take as many as they provided, in a Vec. The spec says that there should always be three.
     let Ok((floats, remaining)) = read_ws_verts::<3>(text) else {
-        return Err(ObjLoadError::v_parse_err(lines, "vn"));
+        return Err(ObjError::v_parse_err(lines, "vn"));
     };
 
     if floats.len() < 3 {
-        Err(ObjLoadError::v_too_small(lines, "vn", floats.len(), 3))
+        Err(ObjError::v_too_small(lines, "vn", floats.len(), 3))
     } else if remaining > 0 {
-        Err(ObjLoadError::v_too_large(lines, "vn", floats.len() + remaining, 3))
+        Err(ObjError::v_too_large(lines, "vn", floats.len() + remaining, 3))
     } else {
         // We know there's exactly three now
         let normal = [floats[0], floats[1], floats[2]].into();
@@ -336,22 +408,21 @@ fn parse_vn(text: &str, lines: &LineRange) -> Result<Vec3, ObjLoadError> {
     }
 }
 
-/// Parses the body of a `vt` directive from an OBJ file.
-fn parse_vt(text: &str, lines: &LineRange) -> Result<Vec2, ObjLoadError> {
+fn parse_vt(text: &str, lines: &LineRange) -> ObjResult<Vec2> {
     // Take at most three
     let Ok((floats, remaining)) = read_ws_verts::<3>(text) else {
-        return Err(ObjLoadError::v_parse_err(lines, "vt"));
+        return Err(ObjError::v_parse_err(lines, "vt"));
     };
 
     let tc = match floats.len() {
-        0 => return Err(ObjLoadError::v_too_small(lines, "vt", floats.len(), 1)),
+        0 => return Err(ObjError::v_too_small(lines, "vt", floats.len(), 1)),
         1 => [floats[0], 0.0].into(),
         2 => [floats[0], floats[1]].into(),
         3 if remaining == 0 => {
             debug!("found texture coord with 3rd dimension; 3rd dimension will be ignored");
             [floats[0], floats[1]].into()
         },
-        n => return Err(ObjLoadError::v_too_large(lines, "vt", n + remaining, 3)),
+        n => return Err(ObjError::v_too_large(lines, "vt", n + remaining, 3)),
     };
 
     trace!("parsed tex-coord {tc:?}");
@@ -359,13 +430,11 @@ fn parse_vt(text: &str, lines: &LineRange) -> Result<Vec2, ObjLoadError> {
     Ok(tc)
 }
 
-
-/// Parses the body of an `f` directive from an OBJ file.
 fn parse_f<'a>(
     text: &'a str,
     current_counts: (usize, usize, usize),
     lines: &'a LineRange,
-) -> impl Iterator<Item = Result<FaceIndices, ObjLoadError>> + 'a {
+) -> impl Iterator<Item = ObjResult<FaceIndices>> + 'a {
     /// Each face is comprised of a list of indices into vertex data, each one specifying one vertex in the face. It may
     /// be comprised of just position data, but may also include indices into texture and normal-data.
     ///
@@ -401,16 +470,16 @@ fn parse_f<'a>(
                 // Positive: check for overflow.
                 Ok(i) if i > 0 => match usize::try_from(i).unwrap() {
                     i if i - 1 < vec_len => Ok(NonZeroUsize::new(i).unwrap()),
-                    _ => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
+                    _ => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
                 },
                 // Negative: subtract it from list size, check for overflow, and add one to return to 1-based index.
                 Ok(i) if i < 0 => match vec_len.checked_sub((-i).try_into().unwrap()) {
                     Some(i) => Ok(NonZeroUsize::new(i + 1).unwrap()),
-                    None => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
+                    None => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
                 },
                 // Zero: out of range.
-                Ok(i) => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
-                Err(_) => Err(ObjLoadError::f_parse_err(lines)),
+                Ok(i) => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
+                Err(_) => Err(ObjError::f_parse_err(lines)),
             }
         };
 
@@ -432,23 +501,22 @@ fn parse_f<'a>(
         let this_shape = RefShape::check(&vt, &vn);
         match shape {
             None => shape = Some(this_shape),
-            Some(shape) if this_shape != shape => return Err(ObjLoadError::f_mismatched(lines)),
+            Some(shape) if this_shape != shape => return Err(ObjError::f_mismatched(lines)),
             Some(_) => (), // otherwise, we can just continue onwards
         }
 
         // There should only be at most three slash-separated components; if there are more remaining after parsing the
         // first three, we have a problem.
         if indices.count() > 0 {
-            Err(ObjLoadError::f_parse_err(lines))
+            Err(ObjError::f_parse_err(lines))
         } else {
             Ok((v, vt, vn))
         }
     })
 }
 
-
 /// Checks whether or not an unsupported directive can be skipped gracefully and logs it if applicable.
-pub(crate) fn check_other(directive: &str, lines: &LineRange) -> Result<(), ObjLoadError> {
+pub(crate) fn check_other(directive: &str, lines: &LineRange) -> ObjResult<()> {
     // For unsupported features, they are split into ones that we can gracefully ignore vs. ones that the
     // user may expect to make a difference.
     let level = match directive {
@@ -476,7 +544,7 @@ pub(crate) fn check_other(directive: &str, lines: &LineRange) -> Result<(), ObjL
         // Level-of-detail, shadow and ray tracing, etc.
         "lod" | "shadow_obj" | "trace_obj" | "ctech" | "stech" => log::Level::Error,
         // Anything else is a flat-out unknown directive.
-        _ => return ObjLoadError::unknown(lines, directive).into(),
+        _ => return ObjError::unknown(lines, directive).into(),
     };
 
     log!(level, "ignoring *.obj directive '{directive}'; feature unsupported");
