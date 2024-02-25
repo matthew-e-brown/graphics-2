@@ -68,4 +68,10 @@ impl GLContext {
         let count = convert!(count, GLsizei, "draw arrays count");
         unsafe { self.gl.draw_arrays(mode.into_raw(), first, count) }
     }
+
+    pub fn draw_elements(&self, mode: DrawMode, count: usize, ty: DrawElementsType, offset: usize) {
+        let count = convert!(count, GLsizei, "draw elements count");
+        let indices = offset as *const _;
+        unsafe { self.gl.draw_elements(mode.into_raw(), count, ty.into_raw(), indices) }
+    }
 }

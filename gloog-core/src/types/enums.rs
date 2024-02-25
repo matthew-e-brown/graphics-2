@@ -98,6 +98,15 @@ gl_enum! {
 
 
 gl_enum! {
+    pub enum DrawElementsType {
+        UnsignedByte => UNSIGNED_BYTE,
+        UnsignedShort => UNSIGNED_SHORT,
+        UnsignedInt => UNSIGNED_INT,
+    }
+}
+
+
+gl_enum! {
     pub enum VertexAttribType {
         Float => FLOAT,
         HalfFloat => HALF_FLOAT,
@@ -178,283 +187,134 @@ gl_enum! {
 
 gl_enum! {
     pub enum EnableCap {
-        // /// If enabled, do alpha testing. See glAlphaFunc.
-        // AlphaTest => ALPHA_TEST,
-
-        // /// If enabled, generate normal vectors when either GL_MAP2_VERTEX_3 or GL_MAP2_VERTEX_4 is used to generate
-        // /// vertices. See glMap2.
-        // AutoNormal => AUTO_NORMAL,
-
-        /// If enabled, blend the computed fragment color values with the values in the color buffers. See glBlendFunc.
+        /// If enabled, blend the computed fragment color values with the values in the color buffers. See
+        /// `glBlendFunc`.
         Blend => BLEND,
 
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane0 => CLIP_PLANE0,
-
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane1 => CLIP_PLANE1,
-
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane2 => CLIP_PLANE2,
-
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane3 => CLIP_PLANE3,
-
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane4 => CLIP_PLANE4,
-
-        // /// If enabled, clip geometry against user-defined clipping plane i. See glClipPlane.
-        // ClipPlane5 => CLIP_PLANE5,
+        /// If enabled, clip geometry against user-defined half space 0.
+        ClipDistance0 => CLIP_DISTANCE0,
+        /// If enabled, clip geometry against user-defined half space 1.
+        ClipDistance1 => CLIP_DISTANCE1,
+        /// If enabled, clip geometry against user-defined half space 2.
+        ClipDistance2 => CLIP_DISTANCE2,
+        /// If enabled, clip geometry against user-defined half space 3.
+        ClipDistance3 => CLIP_DISTANCE3,
+        /// If enabled, clip geometry against user-defined half space 4.
+        ClipDistance4 => CLIP_DISTANCE4,
+        /// If enabled, clip geometry against user-defined half space 5.
+        ClipDistance5 => CLIP_DISTANCE5,
+        /// If enabled, clip geometry against user-defined half space 6.
+        ClipDistance6 => CLIP_DISTANCE6,
+        /// If enabled, clip geometry against user-defined half space 7.
+        ClipDistance7 => CLIP_DISTANCE7,
 
         /// If enabled, apply the currently selected logical operation to the computed fragment color and color buffer
-        /// values. See glLogicOp.
+        /// values. See `glLogicOp`.
         ColorLogicOp => COLOR_LOGIC_OP,
 
-        // /// If enabled, have one or more material parameters track the current color. See glColorMaterial.
-        // ColorMaterial => COLOR_MATERIAL,
-
-        // /// If enabled and no fragment shader is active, add the secondary color value to the computed fragment color.
-        // /// See glSecondaryColor.
-        // ColorSum => COLOR_SUM,
-
-        // /// If enabled, perform a color table lookup on the incoming RGBA color values. See glColorTable.
-        // ColorTable => COLOR_TABLE,
-
-        // /// If enabled, perform a 1D convolution operation on incoming RGBA color values. See glConvolutionFilter1D.
-        // Convolution1d => CONVOLUTION_1D,
-
-        // /// If enabled, perform a 2D convolution operation on incoming RGBA color values. See glConvolutionFilter2D.
-        // Convolution2d => CONVOLUTION_2D,
-
-        /// If enabled, cull polygons based on their winding in window coordinates. See glCullFace.
+        /// If enabled, cull polygons based on their winding in window coordinates. See `glCullFace`.
         CullFace => CULL_FACE,
 
+        /// If enabled, debug messages are produced by a debug context. When disabled, the debug message log is
+        /// silenced. Note that in a non-debug context, very few, if any messages might be produced, even when
+        /// `GL_DEBUG_OUTPUT` is enabled.
+        DebugOutput => DEBUG_OUTPUT,
+
+        /// If enabled, debug messages are produced synchronously by a debug context. If disabled, debug messages may be
+        /// produced asynchronously. In particular, they may be delayed relative to the execution of GL commands, and
+        /// the debug callback function may be called from a thread other than that in which the commands are executed.
+        /// See `glDebugMessageCallback`.
+        DebugOutputSynchronous => DEBUG_OUTPUT_SYNCHRONOUS,
+
+        /// If enabled, the `-wc ≤ zc ≤ wc` plane equation is ignored by view volume clipping (effectively, there is no
+        /// near or far plane clipping). See `glDepthRange`.
+        DepthClamp => DEPTH_CLAMP,
+
         /// If enabled, do depth comparisons and update the depth buffer. Note that even if the depth buffer exists and
-        /// the depth mask is non-zero, the depth buffer is not updated if the depth test is disabled. See glDepthFunc
-        /// and glDepthRange.
+        /// the depth mask is non-zero, the depth buffer is not updated if the depth test is disabled. See `glDepthFunc`
+        /// and `glDepthRange`.
         DepthTest => DEPTH_TEST,
 
         /// If enabled, dither color components or indices before they are written to the color buffer.
         Dither => DITHER,
 
-        // /// If enabled and no fragment shader is active, blend a fog color into the post-texturing color. See glFog.
-        // Fog => FOG,
+        /// If enabled and the value of `GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING` for the framebuffer attachment
+        /// corresponding to the destination buffer is `GL_SRGB`, the R, G, and B destination color values (after
+        /// conversion from fixed-point to floating-point) are considered to be encoded for the sRGB color space and
+        /// hence are linearized prior to their use in blending.
+        FramebufferSRGB => FRAMEBUFFER_SRGB,
 
-        // /// If enabled, histogram incoming RGBA color values. See glHistogram.
-        // Histogram => HISTOGRAM,
-
-        // /// If enabled, apply the currently selected logical operation to the incoming index and color buffer indices.
-        // /// See glLogicOp.
-        // IndexLogicOp => INDEX_LOGIC_OP,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light0 => LIGHT0,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light1 => LIGHT1,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light2 => LIGHT2,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light3 => LIGHT3,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light4 => LIGHT4,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light5 => LIGHT5,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light6 => LIGHT6,
-
-        // /// If enabled, include light i in the evaluation of the lighting equation. See glLightModel and glLight.
-        // Light7 => LIGHT7,
-
-        // /// If enabled and no vertex shader is active, use the current lighting parameters to compute the vertex color
-        // /// or index. Otherwise, simply associate the current color or index with each vertex. See glMaterial,
-        // /// glLightModel, and glLight.
-        // Lighting => LIGHTING,
-
-        /// If enabled, draw lines with correct filtering. Otherwise, draw aliased lines. See glLineWidth.
+        /// If enabled, draw lines with correct filtering. Otherwise, draw aliased lines. See `glLineWidth`.
         LineSmooth => LINE_SMOOTH,
 
-        // /// If enabled, use the current line stipple pattern when drawing lines. See glLineStipple.
-        // LineStipple => LINE_STIPPLE,
+        /// If enabled, use multiple fragment samples in computing the final color of a pixel. See `glSampleCoverage`.
+        Multisample => MULTISAMPLE,
 
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate RGBA values. See glMap1.
-        // Map1Color4 => MAP1_COLOR_4,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate color indices. See glMap1.
-        // Map1Index => MAP1_INDEX,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate normals. See glMap1.
-        // Map1Normal => MAP1_NORMAL,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate s texture coordinates. See glMap1.
-        // Map1TextureCoord1 => MAP1_TEXTURE_COORD_1,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate s and t texture coordinates. See
-        // /// glMap1.
-        // Map1TextureCoord2 => MAP1_TEXTURE_COORD_2,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate s, t, and r texture coordinates.
-        // /// See glMap1.
-        // Map1TextureCoord3 => MAP1_TEXTURE_COORD_3,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate s, t, r, and q texture
-        // /// coordinates. See glMap1.
-        // Map1TextureCoord4 => MAP1_TEXTURE_COORD_4,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate x, y, and z vertex coordinates.
-        // /// See glMap1.
-        // Map1Vertex3 => MAP1_VERTEX_3,
-
-        // /// If enabled, calls to glEvalCoord1, glEvalMesh1, and glEvalPoint1 generate homogeneous x, y, z, and w vertex
-        // /// coordinates. See glMap1.
-        // Map1Vertex4 => MAP1_VERTEX_4,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate RGBA values. See glMap2.
-        // Map2Color4 => MAP2_COLOR_4,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate color indices. See glMap2.
-        // Map2Index => MAP2_INDEX,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate normals. See glMap2.
-        // Map2Normal => MAP2_NORMAL,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate s texture coordinates. See glMap2.
-        // Map2TextureCoord1 => MAP2_TEXTURE_COORD_1,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate s and t texture coordinates. See
-        // /// glMap2.
-        // Map2TextureCoord2 => MAP2_TEXTURE_COORD_2,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate s, t, and r texture coordinates.
-        // /// See glMap2.
-        // Map2TextureCoord3 => MAP2_TEXTURE_COORD_3,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate s, t, r, and q texture
-        // /// coordinates. See glMap2.
-        // Map2TextureCoord4 => MAP2_TEXTURE_COORD_4,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate x, y, and z vertex coordinates.
-        // /// See glMap2.
-        // Map2Vertex3 => MAP2_VERTEX_3,
-
-        // /// If enabled, calls to glEvalCoord2, glEvalMesh2, and glEvalPoint2 generate homogeneous x, y, z, and w vertex
-        // /// coordinates. See glMap2.
-        // Map2Vertex4 => MAP2_VERTEX_4,
-
-        // /// If enabled, compute the minimum and maximum values of incoming RGBA color values. See glMinmax.
-        // Minmax => MINMAX,
-
-        // /// If enabled, use multiple fragment samples in computing the final color of a pixel. See glSampleCoverage.
-        // Multisample => MULTISAMPLE,
-
-        // /// If enabled and no vertex shader is active, normal vectors are normalized to unit length after transformation
-        // /// and before lighting. This method is generally less efficient than GL_RESCALE_NORMAL. See glNormal and
-        // /// glNormalPointer.
-        // Normalize => NORMALIZE,
-
-        // /// If enabled, draw points with proper filtering. Otherwise, draw aliased points. See glPointSize.
-        // PointSmooth => POINT_SMOOTH,
-
-        // /// If enabled, calculate texture coordinates for points based on texture environment and point parameter
-        // /// settings. Otherwise texture coordinates are constant across points.
-        // PointSprite => POINT_SPRITE,
-
-        /// If enabled, and if the polygon is rendered in GL_FILL mode, an offset is added to depth values of a
-        /// polygon's fragments before the depth comparison is performed. See glPolygonOffset.
+        /// If enabled, and if the polygon is rendered in `GL_FILL` mode, an offset is added to depth values of a
+        /// polygon's fragments before the depth comparison is performed. See `glPolygonOffset`.
         PolygonOffsetFill => POLYGON_OFFSET_FILL,
 
-        /// If enabled, and if the polygon is rendered in GL_LINE mode, an offset is added to depth values of a
-        /// polygon's fragments before the depth comparison is performed. See glPolygonOffset.
+        /// If enabled, and if the polygon is rendered in `GL_LINE` mode, an offset is added to depth values of a
+        /// polygon's fragments before the depth comparison is performed. See `glPolygonOffset`.
         PolygonOffsetLine => POLYGON_OFFSET_LINE,
 
         /// If enabled, an offset is added to depth values of a polygon's fragments before the depth comparison is
-        /// performed, if the polygon is rendered in GL_POINT mode. See glPolygonOffset.
+        /// performed, if the polygon is rendered in `GL_POINT` mode. See `glPolygonOffset`.
         PolygonOffsetPoint => POLYGON_OFFSET_POINT,
 
         /// If enabled, draw polygons with proper filtering. Otherwise, draw aliased polygons. For correct antialiased
         /// polygons, an alpha buffer is needed and the polygons must be sorted front to back.
         PolygonSmooth => POLYGON_SMOOTH,
 
-        // /// If enabled, use the current polygon stipple pattern when rendering polygons. See glPolygonStipple.
-        // PolygonStipple => POLYGON_STIPPLE,
+        /// Enables primitive restarting. If enabled, any one of the draw commands which transfers a set of generic
+        /// attribute array elements to the GL will restart the primitive when the index of the vertex is equal to the
+        /// primitive restart index. See `glPrimitiveRestartIndex`.
+        PrimitiveRestart => PRIMITIVE_RESTART,
 
-        // /// If enabled, perform a color table lookup on RGBA color values after color matrix transformation. See
-        // /// glColorTable.
-        // PostColorMatrixColorTable => POST_COLOR_MATRIX_COLOR_TABLE,
+        /// Enables primitive restarting with a fixed index. If enabled, any one of the draw commands which transfers a
+        /// set of generic attribute array elements to the GL will restart the primitive when the index of the vertex is
+        /// equal to the fixed primitive index for the specified index type. The fixed index is equal to `2n-1` where
+        /// `n` is equal to 8 for `GL_UNSIGNED_BYTE`, 16 for `GL_UNSIGNED_SHORT` and 32 for `GL_UNSIGNED_INT`.
+        PrimitiveRestartFixedIndex => PRIMITIVE_RESTART_FIXED_INDEX,
 
-        // /// If enabled, perform a color table lookup on RGBA color values after convolution. See glColorTable.
-        // PostConvolutionColorTable => POST_CONVOLUTION_COLOR_TABLE,
+        /// If enabled, primitives are discarded after the optional transform feedback stage, but before rasterization.
+        /// Furthermore, when enabled, `glClear`, `glClearBufferData`, `glClearBufferSubData`, `glClearTexImage`, and
+        /// `glClearTexSubImage` are ignored.
+        RasterizerDiscard => RASTERIZER_DISCARD,
 
-        // /// If enabled and no vertex shader is active, normal vectors are scaled after transformation and before
-        // /// lighting by a factor computed from the model-view matrix. If the model-view matrix scales space uniformly,
-        // /// this has the effect of restoring the transformed normal to unit length. This method is generally more
-        // /// efficient than GL_NORMALIZE. See glNormal and glNormalPointer.
-        // RescaleNormal => RESCALE_NORMAL,
+        /// If enabled, compute a temporary coverage value where each bit is determined by the alpha value at the
+        /// corresponding sample location. The temporary coverage value is then ANDed with the fragment coverage value.
+        SampleAlphaToCoverage => SAMPLE_ALPHA_TO_COVERAGE,
 
-        // /// If enabled, compute a temporary coverage value where each bit is determined by the alpha value at the
-        // /// corresponding sample location. The temporary coverage value is then ANDed with the fragment coverage value.
-        // SampleAlphaToCoverage => SAMPLE_ALPHA_TO_COVERAGE,
+        /// If enabled, each sample alpha value is replaced by the maximum representable alpha value.
+        SampleAlphaToOne => SAMPLE_ALPHA_TO_ONE,
 
-        // /// If enabled, each sample alpha value is replaced by the maximum representable alpha value.
-        // SampleAlphaToOne => SAMPLE_ALPHA_TO_ONE,
+        /// If enabled, the fragment's coverage is ANDed with the temporary coverage value. If
+        /// `GL_SAMPLE_COVERAGE_INVERT` is set to `GL_TRUE`, invert the coverage value. See `glSampleCoverage`.
+        SampleCoverage => SAMPLE_COVERAGE,
 
-        // /// If enabled, the fragment's coverage is ANDed with the temporary coverage value. If GL_SAMPLE_COVERAGE_INVERT
-        // /// is set to GL_TRUE, invert the coverage value. See glSampleCoverage.
-        // SampleCoverage => SAMPLE_COVERAGE,
+        /// If enabled, the active fragment shader is run once for each covered sample, or at fraction of this rate as
+        /// determined by the current value of `GL_MIN_SAMPLE_SHADING_VALUE`. See `glMinSampleShading`.
+        SampleShading => SAMPLE_SHADING,
 
-        // /// If enabled, perform a two-dimensional convolution operation using a separable convolution filter on incoming
-        // /// RGBA color values. See glSeparableFilter2D.
-        // Separable2d => SEPARABLE_2D,
+        /// If enabled, the sample coverage mask generated for a fragment during rasterization will be ANDed with the
+        /// value of `GL_SAMPLE_MASK_VALUE` before shading occurs. See `glSampleMaski`.
+        SampleMask => SAMPLE_MASK,
 
-        /// If enabled, discard fragments that are outside the scissor rectangle. See glScissor.
+        /// If enabled, discard fragments that are outside the scissor rectangle. See `glScissor`.
         ScissorTest => SCISSOR_TEST,
 
-        /// If enabled, do stencil testing and update the stencil buffer. See glStencilFunc and glStencilOp.
+        /// If enabled, do stencil testing and update the stencil buffer. See `glStencilFunc` and `glStencilOp`.
         StencilTest => STENCIL_TEST,
 
-        /// If enabled and no fragment shader is active, one-dimensional texturing is performed (unless two- or
-        /// three-dimensional or cube-mapped texturing is also enabled). See glTexImage1D.
-        Texture1d => TEXTURE_1D,
+        /// If enabled, cubemap textures are sampled such that when linearly sampling from the border between two
+        /// adjacent faces, texels from both faces are used to generate the final sample value. When disabled, texels
+        /// from only a single face are used to construct the final sample value.
+        TextureCubeMapSeamless => TEXTURE_CUBE_MAP_SEAMLESS,
 
-        /// If enabled and no fragment shader is active, two-dimensional texturing is performed (unless
-        /// three-dimensional or cube-mapped texturing is also enabled). See glTexImage2D.
-        Texture2d => TEXTURE_2D,
-
-        /// If enabled and no fragment shader is active, three-dimensional texturing is performed (unless cube-mapped
-        /// texturing is also enabled). See glTexImage3D.
-        Texture3d => TEXTURE_3D,
-
-        /// If enabled and no fragment shader is active, cube-mapped texturing is performed. See glTexImage2D.
-        TextureCubeMap => TEXTURE_CUBE_MAP,
-
-        // /// If enabled and no vertex shader is active, the q texture coordinate is computed using the texture generation
-        // /// function defined with glTexGen. Otherwise, the current q texture coordinate is used. See glTexGen.
-        // TextureGenQ => TEXTURE_GEN_Q,
-
-        // /// If enabled and no vertex shader is active, the r texture coordinate is computed using the texture generation
-        // /// function defined with glTexGen. Otherwise, the current r texture coordinate is used. See glTexGen.
-        // TextureGenR => TEXTURE_GEN_R,
-
-        // /// If enabled and no vertex shader is active, the s texture coordinate is computed using the texture generation
-        // /// function defined with glTexGen. Otherwise, the current s texture coordinate is used. See glTexGen.
-        // TextureGenS => TEXTURE_GEN_S,
-
-        // /// If enabled and no vertex shader is active, the t texture coordinate is computed using the texture generation
-        // /// function defined with glTexGen. Otherwise, the current t texture coordinate is used. See glTexGen.
-        // TextureGenT => TEXTURE_GEN_T,
-
-        // /// If enabled and a vertex shader is active, then the derived point size is taken from the (potentially
-        // /// clipped) shader builtin gl_PointSize and clamped to the implementation-dependent point size range.
-        // VertexProgramPointSize => VERTEX_PROGRAM_POINT_SIZE,
-
-        // /// If enabled and a vertex shader is active, it specifies that the GL will choose between front and back colors
-        // /// based on the polygon's face direction of which the vertex being shaded is a part. It has no effect on points
-        // /// or lines.
-        // VertexProgramTwoSide => VERTEX_PROGRAM_TWO_SIDE,
+        /// If enabled and a vertex or geometry shader is active, then the derived point size is taken from the
+        /// (potentially clipped) shader builtin `gl_PointSize` and clamped to the implementation-dependent point size
+        /// range.
+        ProgramPointSize => PROGRAM_POINT_SIZE,
     }
 }
