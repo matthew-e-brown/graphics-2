@@ -1,3 +1,5 @@
+use std::ffi::CString;
+
 use crate::bindings::types::*;
 use crate::types::*;
 use crate::{convert, GLContext};
@@ -33,15 +35,27 @@ impl GLContext {
     }
 
 
+    pub fn get_attrib_location(&self, program: ProgramID, name: &str) -> Option<VertexAttribLocation> {
+        let name = CString::new(name).expect("attrib location name should not contain NUL-bytes");
+        let loc = unsafe { self.gl.get_attrib_location(program.into_raw(), name.as_ptr()) };
+        if loc != -1 {
+            Some(VertexAttribLocation(loc as GLuint))
+        } else {
+            None
+        }
+    }
+
+
     pub fn vertex_attrib_pointer(
         &self,
-        index: u32,
+        index: impl Into<VertexAttribLocation>,
         size: usize,
         attrib_type: VertexAttribType,
         normalized: bool,
         stride: isize,
         offset: usize,
     ) {
+        let index = index.into().0;
         let stride = convert!(stride, GLsizei, "vertex attribute stride");
         let normalized = convert!(normalized, GLboolean, "'normalized' parameter");
 
@@ -58,7 +72,8 @@ impl GLContext {
     }
 
 
-    pub fn enable_vertex_attrib_array(&self, index: u32) {
+    pub fn enable_vertex_attrib_array(&self, index: impl Into<VertexAttribLocation>) {
+        let index = index.into().0;
         unsafe { self.gl.enable_vertex_attrib_array(index) }
     }
 

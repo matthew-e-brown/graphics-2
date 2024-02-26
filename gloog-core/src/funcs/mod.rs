@@ -3,7 +3,7 @@ mod shaders;
 mod uniforms;
 mod vertex;
 
-use crate::types::{ClearMask, EnableCap};
+use crate::types::{ClearMask, EnableCap, PolygonMode, PolygonModeFace};
 use crate::GLContext;
 
 
@@ -25,5 +25,10 @@ impl GLContext {
 
     pub fn clear(&self, mask: ClearMask) {
         unsafe { self.gl.clear(mask.into_raw()) }
+    }
+
+
+    pub fn polygon_mode(&self, face: PolygonModeFace, mode: PolygonMode) {
+        unsafe { self.gl.polygon_mode(face.into_raw(), mode.into_raw()) }
     }
 }

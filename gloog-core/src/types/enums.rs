@@ -318,3 +318,18 @@ gl_enum! {
         ProgramPointSize => PROGRAM_POINT_SIZE,
     }
 }
+
+
+gl_enum! {
+    pub enum PolygonModeFace {
+        FrontAndBack => FRONT_AND_BACK,
+    }
+}
+
+gl_enum! {
+    pub enum PolygonMode {
+        Point => POINT,
+        Line => LINE,
+        Fill => FILL,
+    }
+}
