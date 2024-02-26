@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytemuck::cast_slice;
 use glfw::{self, Context, Key, WindowEvent, WindowMode};
 use gloog_core::types::{BufferTarget, BufferUsage, ClearMask, DrawMode, ProgramID, ShaderType, VertexAttribType};
-use gloog_core::GLContext;
+use gloog_core::{GLContext, InitFailureMode};
 use gloog_math::Vec3;
 
 
@@ -36,7 +36,7 @@ pub fn main() {
         .expect("Could not create the window.");
 
     // Pass all calls to load OpenGL symbols to GLFW
-    let gl = GLContext::init(|s| window.get_proc_address(s)).unwrap();
+    let gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();
 
     glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
     window.set_resizable(false);

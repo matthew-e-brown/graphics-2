@@ -326,10 +326,30 @@ gl_enum! {
     }
 }
 
+
 gl_enum! {
     pub enum PolygonMode {
         Point => POINT,
         Line => LINE,
         Fill => FILL,
+    }
+}
+
+
+gl_enum! {
+    pub enum StringName {
+        Renderer => RENDERER,
+        Vendor => VENDOR,
+        Version => VERSION,
+        ShadingLanguageVersion => SHADING_LANGUAGE_VERSION,
+    }
+}
+
+
+gl_enum! {
+    pub enum IndexedStringName {
+        Extensions => EXTENSIONS,
+        ShadingLanguageVersion => SHADING_LANGUAGE_VERSION,
+        SPIRVExtensions => SPIR_V_EXTENSIONS,
     }
 }

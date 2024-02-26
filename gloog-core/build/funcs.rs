@@ -10,6 +10,38 @@ use crate::STRUCT_NAME;
 
 /// Output the declaration for the struct of function pointers.
 pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
+    writedoc!(dest,
+        r#"
+            /// How [`{0}::init`] should behave when a function pointer cannot be loaded.
+            ///
+            /// Be careful with using options other than `Abort`. They should be considered `unsafe`. See their
+            /// documentation for more information.
+            #[derive(Debug, Clone, Copy)]
+            pub enum InitFailureMode {{
+                /// Any single function pointer failing to load will cause [`{0}` initialization][{0}] to stop and
+                /// return an [`Err`].
+                ///
+                /// As far as Rust safety guarantees go, **this is the only safe option.** All other options will result
+                /// in `{0}` being partially uninitialized, which violates Rust's initialization invariant.
+                Abort,
+                /// When a function pointer fails to load, a warning will [be logged][https://docs.rs/log] and
+                /// initialization will continue. The function pointer will be left as [`null`][std::ptr::null] instead.
+                ///
+                /// **This option is unsafe.** If a pointer fails to load, [`{0}`] will be left partially uninitialized,
+                /// which violates Rust's initialization invariant.
+                WarnAndContinue,
+                /// When a function pointer fails to load, initialization will continue as if it did not. The function
+                /// pointer will be left as [`null`][std::ptr::null] instead.
+                ///
+                /// **This option is unsafe.** If a pointer fails to load, [`{0}`] will be left partially uninitialized,
+                /// which violates Rust's initialization invariant.
+                ContinueSilently,
+            }}
+
+        "#,
+        STRUCT_NAME
+    )?;
+
     writedoc!(
         dest,
         r#"
@@ -42,14 +74,21 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
         "#
     )?;
 
+    // Just cuz there's a lot of `{}` in here, it'd be annoying to use `writedoc` on them.
     let init_fn_str = indoc! {r#"
-        pub fn init(mut loader_fn: impl FnMut(&'static str) -> *const c_void) -> Result<Self, &'static str> {
+        /// Loads all OpenGL function pointers. See [`InitFailureMode`] for more information.
+        pub unsafe fn init(
+            mut loader_fn: impl FnMut(&'static str) -> *const c_void,
+            failure_mode: InitFailureMode,
+        ) -> Result<Self, &'static str> {
             /// Loads an OpenGL function from its symbol name, falling back to the ones in the list (in order) if it
             /// can't be found.
-            fn load_ptr<F>(mut loader_fn: F, name: &'static str, fallbacks: &[&'static str]) -> Result<VoidPtr, &'static str>
-            where
-                F: FnMut(&'static str) -> *const c_void,
-            {
+            fn load_ptr(
+                mut loader_fn: impl FnMut(&'static str) -> *const c_void,
+                name: &'static str,
+                fallbacks: &[&'static str],
+                failure_mode: InitFailureMode,
+            ) -> Result<VoidPtr, &'static str> {
                 let mut ptr = loader_fn(name);
                 if ptr.is_null() {
                     for &name in fallbacks {
@@ -63,7 +102,19 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
                 if !ptr.is_null() {
                     Ok(ptr)
                 } else {
-                    Err(name)
+                    match failure_mode {
+                        InitFailureMode::Abort => Err(name),
+                        InitFailureMode::ContinueSilently => Ok(std::ptr::null()),
+                        InitFailureMode::WarnAndContinue => {
+                            if fallbacks.len() == 0 {
+                                log::warn!("failed to load function pointer for {name:?}");
+                            } else {
+                                log::warn!("failed to load function pointer for {name:?} with fallbacks {fallbacks:?}");
+                            }
+
+                            Ok(std::ptr::null())
+                        },
+                    }
                 }
             }
 
@@ -97,7 +148,7 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
             })
             .unwrap_or("&[]".into());
 
-        writeln!(dest, "        {new_name}: load_ptr(&mut loader_fn, {load_name}, {fallbacks})?,")?;
+        writeln!(dest, "        {new_name}: load_ptr(&mut loader_fn, {load_name}, {fallbacks}, failure_mode)?,")?;
     }
 
     writeln!(dest, "    }})")?; // Close Ok(Self {...})
