@@ -9,7 +9,7 @@ use gloog_math::Vec3;
 use image::ImageResult;
 use log::info;
 
-use super::error::{MtlError, MtlResult};
+use super::error::{MtlLoadError, MtlResult};
 use super::{read_ws_verts, trim_comment, CachedImage, ObjMaterial};
 use crate::loader::{lines_escaped, LineRange};
 
@@ -21,7 +21,7 @@ pub fn parse_mtl_file(
     material_indices: &mut HashMap<Box<str>, usize>,
     texture_cache: &mut HashMap<Box<str>, CachedImage>,
 ) -> MtlResult<()> {
-    let file = File::open(path).map_err(|err| MtlError::IOOpenError(err))?;
+    let file = File::open(path).map_err(|err| MtlLoadError::IOOpenError(err))?;
     let mut lines = lines_escaped(BufReader::new(file));
 
     let mut cur_name = None; // Name of the material we're currently parsing lines for
@@ -46,7 +46,7 @@ pub fn parse_mtl_file(
         while let Some(line_result) = lines.next() {
             let (line_nums, line) = match line_result {
                 Ok(line) => line,
-                Err(err) => return Err(MtlError::IOReadError(err)),
+                Err(err) => return Err(MtlLoadError::IOReadError(err)),
             };
 
             let line = trim_comment(&line);
@@ -65,6 +65,7 @@ pub fn parse_mtl_file(
                 skip_mode = false;
 
                 if let Some(name) = cur_name {
+                    info!("parsed material {name}: {material:?}");
                     parsed_materials.push(material);
                     material_indices.insert(name, parsed_materials.len() - 1);
                 }
@@ -76,7 +77,7 @@ pub fn parse_mtl_file(
                     skip_mode = true; // We can skip the next material
                     cur_name = None; // Don't need a name
                 } else {
-                    // Set the current name to the one we just found
+                    // Set next name
                     cur_name = Some(new_name);
                 }
 
@@ -89,20 +90,20 @@ pub fn parse_mtl_file(
                     "Kd" => set_single!("Kd", mtl.diffuse = parse_color(line, &line_nums)?),
                     "Ka" => set_single!("Ka", mtl.ambient = parse_color(line, &line_nums)?),
                     "Ks" => set_single!("Ks", mtl.specular = parse_color(line, &line_nums)?),
-                    "Ns => " => set_single!("Ns", mtl.spec_pow = parse_scalar(line, &line_nums)?),
+                    "Ns" => set_single!("Ns", mtl.spec_pow = parse_scalar(line, &line_nums)?),
                     "d" => set_single!("d or Tr", mtl.alpha = parse_scalar(line, &line_nums)?),
                     "Tr" => set_single!("d or Tr", mtl.alpha = 1.0 - parse_scalar(line, &line_nums)?),
                     "map_Kd" => info!("texture map {directive} {line} is not yet supported"),
                     "map_Ka" => info!("texture map {directive} {line} is not yet supported"),
                     "map_Ks" => info!("texture map {directive} {line} is not yet supported"),
-                    "map_Ns => " => info!("texture map {directive} {line} is not yet supported"),
+                    "map_Ns" => info!("texture map {directive} {line} is not yet supported"),
                     "map_d" => info!("texture map {directive} {line} is not yet supported"),
                     "bump" | "map_bump" => info!("texture map {directive} {line} is not yet supported"),
                     other => info!("unknown or unsupported directive {other} in material {mtl}; skipping."),
                 }
             } else {
                 // If we don't have a current name but the directive isn't `newmtl`, that's bad!!
-                return Err(MtlError::BeforeName(line_nums));
+                return Err(MtlLoadError::BeforeName(line_nums));
             }
         }
 
@@ -123,18 +124,18 @@ pub fn parse_mtl_file(
 fn parse_color(line: &str, lines: &LineRange) -> MtlResult<Vec3> {
     // Line is known to be trimmed
     if line.starts_with("xyz") {
-        Err(MtlError::UnsupportedColorFormat(lines.clone(), "xyz"))
+        Err(MtlLoadError::UnsupportedColorFormat(lines.clone(), "xyz"))
     } else if line.starts_with("spectral") {
-        Err(MtlError::UnsupportedColorFormat(lines.clone(), "spectral"))
+        Err(MtlLoadError::UnsupportedColorFormat(lines.clone(), "spectral"))
     } else {
         let Ok((floats, remaining)) = read_ws_verts::<3>(line) else {
-            return Err(MtlError::InvalidColor(lines.clone()));
+            return Err(MtlLoadError::InvalidColor(lines.clone()));
         };
 
         match floats.len() {
             1 => Ok([floats[0], floats[0], floats[0]].into()),
             3 if remaining == 0 => Ok([floats[0], floats[1], floats[2]].into()),
-            _ => Err(MtlError::InvalidColor(lines.clone())),
+            _ => Err(MtlLoadError::InvalidColor(lines.clone())),
         }
     }
 }
@@ -143,6 +144,6 @@ fn parse_scalar(line: &str, lines: &LineRange) -> MtlResult<f32> {
     let mut pieces = line.split_whitespace();
     match pieces.by_ref().next().map(|s| s.parse()) {
         Some(Ok(n)) if pieces.count() == 0 => Ok(n), // pieces.count() is the remaining number of bits on the line
-        _ => Err(MtlError::InvalidScalar(lines.clone())),
+        _ => Err(MtlLoadError::InvalidScalar(lines.clone())),
     }
 }

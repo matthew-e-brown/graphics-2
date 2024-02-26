@@ -13,19 +13,22 @@ mod error;
 mod mtl;
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufReader;
 use std::num::{NonZeroUsize, ParseFloatError};
+use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, Weak};
 
 use arrayvec::ArrayVec;
+use bytemuck::{Pod, Zeroable};
 use gloog_core::bindings::types::GLuint;
 use gloog_math::{Vec2, Vec3};
 use image::{ImageBuffer, Luma, Rgba};
-use log::{debug, log, trace};
+use log::{debug, info, log, trace};
 
-use self::error::{ObjError, ObjResult};
+use self::error::{ObjLoadError, ObjResult};
 use crate::loader::obj::mtl::parse_mtl_file;
 use crate::loader::{lines_escaped, LineRange};
 
@@ -76,24 +79,20 @@ pub struct ObjModel {
     /// Individual groups of faces which share a common material (and thus will share a single draw call). Each group
     /// contains a buffer of indices which index into [`Self::data`] using `glDrawElements`.
     groups: Arc<[ObjGroup]>,
-    /// All raw vertex attribute data for this model. This data is referenced through indices in [`Self::groups`].
+    /// All raw vertex attribute data for this model. This data is referenced through indices in [`Self::indices`].
     data: Arc<[ObjVertex]>,
-}
-
-/// Holds a group of faces to be drawn with a common material.
-///
-/// Comprised of material information and a list of indices
-#[derive(Debug)]
-pub struct ObjGroup {
-    /// Contains information for how to set uniform information for this group's draw call.
-    pub material: ObjMaterial,
-    /// An array of indices to be drawn with `glDrawElements`, which indexes into the parent [`ObjModel`]'s data.
-    indices: Box<[GLuint]>,
+    /// All of the indices for this model. [`Self::groups`] contains where each `glDrawElements` call needs to start and
+    /// stop.
+    indices: Arc<[GLuint]>,
 }
 
 impl ObjModel {
-    pub fn vertex_buffer(&self) -> &[ObjVertex] {
+    pub fn vertex_data(&self) -> &[ObjVertex] {
         &self.data
+    }
+
+    pub fn index_data(&self) -> &[GLuint] {
+        &self.indices
     }
 
     pub fn groups(&self) -> &[ObjGroup] {
@@ -101,14 +100,51 @@ impl ObjModel {
     }
 }
 
+
+/// Information about a group of faces to be drawn with a common material.
+#[derive(Debug)]
+pub struct ObjGroup {
+    /// Contains information for how to set uniform information for this group's draw call.
+    pub material: ObjMaterial,
+    /// Where in [`ModelData::indices`] this particular group should be drawn.
+    index_range: Range<usize>,
+}
+
 impl ObjGroup {
-    pub fn index_buffer(&self) -> &[GLuint] {
-        &self.indices
+    pub fn indices(&self) -> Range<usize> {
+        self.index_range.clone()
     }
 }
 
+/// A set of vertex attributes for a basic vertex.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
+pub struct ObjVertex {
+    position: Vec3,
+    tex_coord: Vec2,
+    normal: Vec3,
+}
+
+macro_rules! vertex_offset {
+    ($field:ident) => {{
+        // We don't really need to care if the memory we're getting pointers to has been initialized properly, so we
+        // just allocate some zeroes.
+        let vert = unsafe { std::mem::MaybeUninit::<ObjVertex>::zeroed().assume_init() };
+        let base = std::ptr::from_ref(&vert) as *const u8;
+        let field = std::ptr::from_ref(&vert.$field) as *const u8;
+        unsafe { field.offset_from(base) as usize }
+    }};
+}
+
+impl ObjVertex {
+    pub const STRIDE: isize = std::mem::size_of::<ObjVertex>() as isize;
+    pub const OFFSET_POSITION: usize = vertex_offset!(position);
+    pub const OFFSET_TEX_COORD: usize = vertex_offset!(tex_coord);
+    pub const OFFSET_NORMAL: usize = vertex_offset!(normal);
+}
+
 /// Used to configure uniforms before executing draw call.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct ObjMaterial {
     pub diffuse: Option<Vec3>,           // `Kd`
     pub ambient: Option<Vec3>,           // `Ka`
@@ -123,36 +159,39 @@ pub struct ObjMaterial {
     pub map_bump: Option<RgbaImage>,     // `bump` or `map_bump`
 }
 
+impl Debug for ObjMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut debug = f.debug_struct("ObjMaterial");
+        let mut count = 0u32;
 
-/// A set of vertex attributes for a basic vertex.
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ObjVertex {
-    position: Vec3,
-    tex_coord: Vec2,
-    normal: Vec3,
-}
+        /// Only bother printing if it's `Some`.
+        macro_rules! field {
+            ($field:ident) => {
+                if let Some(value) = self.$field.as_ref() {
+                    debug.field(stringify!($field), value);
+                    count += 1;
+                }
+            };
+        }
 
-macro_rules! vertex_offset {
-    ($field:ident) => {{
-        let vert = ObjVertex {
-            position: Vec3::new(0.0, 0.0, 0.0),
-            tex_coord: Vec2::new(0.0, 0.0),
-            normal: Vec3::new(0.0, 0.0, 0.0),
-        };
+        field!(diffuse);
+        field!(ambient);
+        field!(specular);
+        field!(spec_pow);
+        field!(alpha);
+        field!(map_diffuse);
+        field!(map_ambient);
+        field!(map_specular);
+        field!(map_spec_pow);
+        field!(map_alpha);
+        field!(map_bump);
 
-        let base = std::ptr::from_ref(&vert) as *const u8;
-        let field = std::ptr::from_ref(&vert.$field) as *const u8;
+        if count == 0 {
+            debug.field("all", &Option::<()>::None);
+        }
 
-        unsafe { field.offset_from(base) as usize }
-    }};
-}
-
-impl ObjVertex {
-    pub const STRIDE: isize = std::mem::size_of::<ObjVertex>() as isize;
-    pub const OFFSET_POSITION: usize = vertex_offset!(position);
-    pub const OFFSET_TEX_COORD: usize = vertex_offset!(tex_coord);
-    pub const OFFSET_NORMAL: usize = vertex_offset!(normal);
+        debug.finish()
+    }
 }
 
 
@@ -237,9 +276,9 @@ impl ObjModel {
                     // many elements for this face (since we're using a u16 to reduce the footprint of this function).
                     let pushed = face_idx_buffer.len() - before_push;
                     if pushed < 3 {
-                        return Err(ObjError::f_too_few(&line_nums, pushed));
+                        return Err(ObjLoadError::f_too_few(&line_nums, pushed));
                     } else if pushed > u16::MAX as usize {
-                        return Err(ObjError::f_too_many(&line_nums, pushed));
+                        return Err(ObjLoadError::f_too_many(&line_nums, pushed));
                     }
 
                     // Trim the count down to smaller number type for memory savings; also save the material that this
@@ -253,7 +292,7 @@ impl ObjModel {
                         // is already trimmed and comments ignored, so we can just take the remainder of the line as the
                         // new name.
                         Some(idx) => curr_material = Some(*idx),
-                        None => return Err(ObjError::unknown_mtl(&line_nums, line)),
+                        None => return Err(ObjLoadError::unknown_mtl(&line_nums, line)),
                     }
                 },
                 "mtllib" => {
@@ -269,6 +308,14 @@ impl ObjModel {
             }
         }
 
+        info!(
+            "parsed v × {}, vt × {}, vn × {}, and f × {}",
+            v_data.len(),
+            vt_data.len(),
+            vn_data.len(),
+            face_vert_counts.len()
+        );
+
         // There should be one of each of these per face.
         assert_eq!(face_vert_counts.len(), face_material_map.len());
 
@@ -283,21 +330,30 @@ impl ObjModel {
         let mut vertex_data = Vec::new(); // Final vertex attributes after merging through face indices
         let mut vertex_map = HashMap::new(); // Lookup table for whether or not a triple has been included yet
 
-        // List of final indices into final vertex data, grouped by material (using the index of the material).
-        // Individual faces are separated only by the `PRIMITIVE_RESTART_INDEX`.
-        let mut groups = HashMap::new();
+        // List of final indices into final vertex data, grouped by (index of) material. Individual faces are separated
+        // by `PRIMITIVE_RESTART_INDEX`.
+        let mut index_groups = HashMap::new();
+        let mut total_size = 0;
+
+        let debug_get_mtl_name = |mtl_index: Option<usize>| {
+            mtl_index
+                .and_then(|idx| material_indices.iter().find(|(_, &i)| i == idx).map(|(name, _)| &name[..]))
+                .unwrap_or("[NO MATERIAL]")
+        };
 
         for (vert_count, material_idx) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
             // This loop runs once per face
             // ----------------------------------------------------------------
 
             let vert_count = vert_count as usize; // back to usize for indexing
+            assert!(vert_count >= 3);
+
             let vert_indices = &face_idx_buffer[..vert_count];
 
             // Ensure we can push this many more vertices into our main buffer and still be able to index into it with
             // `GL_UNSIGNED_INT`:
             if vertex_data.len() + vert_count >= GLuint::MAX as usize {
-                return Err(ObjError::VertexDataOverflow);
+                return Err(ObjLoadError::VertexDataOverflow);
             }
 
             // We know from our `pushed < 3` check earlier that each section of vertices is *at least* three. So before
@@ -317,13 +373,16 @@ impl ObjModel {
             };
 
             // Grab the list that this face is going to push its indices into
-            let index_list = groups.entry(material_idx).or_insert_with(|| Vec::new());
+            let index_list = index_groups.entry(material_idx).or_insert_with(|| Vec::new());
 
             // Now that we've done some double checking on the vertices for this face, drain them from the vector.
             for vert_indices in face_idx_buffer.drain(..vert_count) {
                 // For each vertex in this face, check if we've already added its index triple to the final buffer, and
                 // push it into this group's list of indices. If not, go grab the necessary data, insert into the vertex
                 // buffer, and push the new index.
+
+                trace!("adding index {:?} to material {}", vert_indices, debug_get_mtl_name(material_idx));
+
                 index_list.push(*vertex_map.entry(vert_indices).or_insert_with(|| {
                     // Don't forget to undo the 1-based indexing before actually doing our lookups.
                     let (v_idx, vt_idx, vn_idx) = vert_indices;
@@ -345,21 +404,49 @@ impl ObjModel {
 
             // End of our face, so we want to restart our primitive rendering, too.
             index_list.push(PRIMITIVE_RESTART);
+            total_size += vert_count + 1;
         }
 
-        // I don't even wanna think about how much heap allocation there is in this function... oh well, it's probably
-        // still less than there'd be in something like JavaScript lol.
+        debug!(
+            "material groups:\n{:#?}",
+            index_groups
+                .iter()
+                .map(|(&material_idx, indices)| { (debug_get_mtl_name(material_idx), indices.len()) })
+                .collect::<HashMap<_, _>>(),
+        );
+
+        // Merge all the indices into one list, no longer grouped by material; keep the materials separate by
+        // referencing indices into this new final buffer.
+        let mut all_indices = Vec::with_capacity(total_size);
+
+        let num_groups = index_groups.len();
+        let group_list =
+            index_groups
+                .into_iter()
+                .fold(Vec::with_capacity(num_groups), |mut acc, (mtl_idx, indices)| {
+                    let material = mtl_idx.map(|i| parsed_materials[i].clone()).unwrap_or_default();
+                    let index_range = all_indices.len()..all_indices.len() + indices.len();
+
+                    all_indices.extend(indices);
+                    acc.push(ObjGroup { material, index_range });
+                    acc
+                });
+
+        info!(
+            "finished loading model from `{}`: vertices: {}, indices: {}, material groups: {}",
+            path.display(),
+            vertex_data.len(),
+            all_indices.len(),
+            group_list.len(),
+        );
+
+        debug!("material groups: {:?}", group_list.iter().map(|g| g.index_range.clone()).collect::<Vec<_>>());
 
         // Convert our indices into boxed slices, and finally grab the actual material values.
         Ok(ObjModel {
             data: vertex_data.into(),
-            groups: groups
-                .into_iter()
-                .map(|(material, indices)| ObjGroup {
-                    indices: indices.into_boxed_slice(),
-                    material: material.map(|i| parsed_materials[i].clone()).unwrap_or_default(),
-                })
-                .collect(),
+            indices: all_indices.into(),
+            groups: group_list.into(),
         })
     }
 }
@@ -381,7 +468,7 @@ fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     // Take at most four; some files seem to specify extra `1` values after the w to force some viewers to get the
     // message (that's my guess anyways).
     let Ok((floats, remaining)) = read_ws_verts::<4>(text) else {
-        return Err(ObjError::v_parse_err(lines, "v"));
+        return Err(ObjLoadError::v_parse_err(lines, "v"));
     };
 
     // xyz are required; w is optional and defaults to 1. In OBJ, w is only used for free-form curves and surfaces:
@@ -389,9 +476,15 @@ fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     // Meaning, we should never run into a case where `w` it isn't 1. If we do, simply emit a small warning/notice that
     // the file _may_ contain unsupported features and that we're ignoring it.
     if floats.len() < 3 {
-        Err(ObjError::v_too_small(lines, "v", floats.len(), 3))
+        Err(ObjLoadError::v_too_small(lines, "v", floats.len(), 3))
     } else if remaining > 0 {
-        Err(ObjError::v_too_large(lines, "v", floats.len() + remaining, 4))
+        // Some OBJ files seem to specify a bunch of extra '1's just to ensure the software sees it...? Maybe? Not sure.
+        trace!("found 'v' directive with {} values; only the first 3 will be used", floats.len());
+
+        let vertex = [floats[0], floats[1], floats[2]].into();
+        trace!("parsed vertex {vertex:?}");
+
+        Ok(vertex)
     } else {
         if floats.len() == 4 && floats[3] != 1.0 {
             debug!(
@@ -410,13 +503,13 @@ fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
 fn parse_vn(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     // Take as many as they provided, in a Vec. The spec says that there should always be three.
     let Ok((floats, remaining)) = read_ws_verts::<3>(text) else {
-        return Err(ObjError::v_parse_err(lines, "vn"));
+        return Err(ObjLoadError::v_parse_err(lines, "vn"));
     };
 
     if floats.len() < 3 {
-        Err(ObjError::v_too_small(lines, "vn", floats.len(), 3))
+        Err(ObjLoadError::v_too_small(lines, "vn", floats.len(), 3))
     } else if remaining > 0 {
-        Err(ObjError::v_too_large(lines, "vn", floats.len() + remaining, 3))
+        Err(ObjLoadError::v_too_large(lines, "vn", floats.len() + remaining, 3))
     } else {
         // We know there's exactly three now
         let normal = [floats[0], floats[1], floats[2]].into();
@@ -428,18 +521,18 @@ fn parse_vn(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
 fn parse_vt(text: &str, lines: &LineRange) -> ObjResult<Vec2> {
     // Take at most three
     let Ok((floats, remaining)) = read_ws_verts::<3>(text) else {
-        return Err(ObjError::v_parse_err(lines, "vt"));
+        return Err(ObjLoadError::v_parse_err(lines, "vt"));
     };
 
     let tc = match floats.len() {
-        0 => return Err(ObjError::v_too_small(lines, "vt", floats.len(), 1)),
+        0 => return Err(ObjLoadError::v_too_small(lines, "vt", floats.len(), 1)),
         1 => [floats[0], 0.0].into(),
         2 => [floats[0], floats[1]].into(),
         3 if remaining == 0 => {
             debug!("found texture coord with 3rd dimension; 3rd dimension will be ignored");
             [floats[0], floats[1]].into()
         },
-        n => return Err(ObjError::v_too_large(lines, "vt", n + remaining, 3)),
+        n => return Err(ObjLoadError::v_too_large(lines, "vt", n + remaining, 3)),
     };
 
     trace!("parsed tex-coord {tc:?}");
@@ -487,16 +580,16 @@ fn parse_f<'a>(
                 // Positive: check for overflow.
                 Ok(i) if i > 0 => match usize::try_from(i).unwrap() {
                     i if i - 1 < vec_len => Ok(NonZeroUsize::new(i).unwrap()),
-                    _ => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
+                    _ => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 },
                 // Negative: subtract it from list size, check for overflow, and add one to return to 1-based index.
                 Ok(i) if i < 0 => match vec_len.checked_sub((-i).try_into().unwrap()) {
                     Some(i) => Ok(NonZeroUsize::new(i + 1).unwrap()),
-                    None => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
+                    None => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 },
                 // Zero: out of range.
-                Ok(i) => Err(ObjError::f_index_range(lines, vec_name, i, vec_len)),
-                Err(_) => Err(ObjError::f_parse_err(lines)),
+                Ok(i) => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
+                Err(_) => Err(ObjLoadError::f_parse_err(lines)),
             }
         };
 
@@ -518,14 +611,14 @@ fn parse_f<'a>(
         let this_shape = RefShape::check(&vt, &vn);
         match shape {
             None => shape = Some(this_shape),
-            Some(shape) if this_shape != shape => return Err(ObjError::f_mismatched(lines)),
+            Some(shape) if this_shape != shape => return Err(ObjLoadError::f_mismatched(lines)),
             Some(_) => (), // otherwise, we can just continue onwards
         }
 
         // There should only be at most three slash-separated components; if there are more remaining after parsing the
         // first three, we have a problem.
         if indices.count() > 0 {
-            Err(ObjError::f_parse_err(lines))
+            Err(ObjLoadError::f_parse_err(lines))
         } else {
             Ok((v, vt, vn))
         }
@@ -561,7 +654,7 @@ pub(crate) fn check_other(directive: &str, lines: &LineRange) -> ObjResult<()> {
         // Level-of-detail, shadow and ray tracing, etc.
         "lod" | "shadow_obj" | "trace_obj" | "ctech" | "stech" => log::Level::Error,
         // Anything else is a flat-out unknown directive.
-        _ => return ObjError::unknown(lines, directive).into(),
+        _ => return ObjLoadError::unknown(lines, directive).into(),
     };
 
     log!(level, "ignoring *.obj directive '{directive}'; feature unsupported");

@@ -7,13 +7,13 @@ use crate::loader::{fmt_line_range, LineRange};
 
 // cspell:words newmtl
 
-pub type ObjResult<T> = Result<T, ObjError>;
-pub type MtlResult<T> = Result<T, MtlError>;
+pub type ObjResult<T> = Result<T, ObjLoadError>;
+pub type MtlResult<T> = Result<T, MtlLoadError>;
 
 
 #[rustfmt::skip]
 #[derive(Error, Debug)]
-pub enum ObjError {
+pub enum ObjLoadError {
     #[error("failed to read from file:\n{0}")]
     IOReadError(#[from] io::Error),
 
@@ -21,7 +21,7 @@ pub enum ObjError {
     MtlOpenError(io::Error),
 
     #[error("error parsing mtl file:\n{0}")]
-    MtlError(MtlError),
+    MtlError(MtlLoadError),
 
     #[error("unknown material {name} on {}", fmt_line_range(.lines))]
     UnknownMaterial { lines: LineRange, name: String },
@@ -57,8 +57,8 @@ pub enum ObjError {
     UnknownDirective { lines: LineRange, directive: String },
 }
 
-#[derive(Debug, Error)]
-pub enum MtlError {
+#[derive(Error, Debug)]
+pub enum MtlLoadError {
     #[error("failed to read from file:\n{0}")]
     IOReadError(io::Error),
 
@@ -85,22 +85,22 @@ pub enum MtlError {
 }
 
 
-impl<T> From<ObjError> for Result<T, ObjError> {
-    fn from(value: ObjError) -> Self {
+impl<T> From<ObjLoadError> for Result<T, ObjLoadError> {
+    fn from(value: ObjLoadError) -> Self {
         Err(value)
     }
 }
 
-impl<T> From<MtlError> for Result<T, MtlError> {
-    fn from(value: MtlError) -> Self {
+impl<T> From<MtlLoadError> for Result<T, MtlLoadError> {
+    fn from(value: MtlLoadError) -> Self {
         Err(value)
     }
 }
 
-impl From<MtlError> for ObjError {
-    fn from(value: MtlError) -> Self {
+impl From<MtlLoadError> for ObjLoadError {
+    fn from(value: MtlLoadError) -> Self {
         match value {
-            MtlError::IOReadError(inner) => Self::IOReadError(inner),
+            MtlLoadError::IOReadError(inner) => Self::IOReadError(inner),
             other => Self::MtlError(other),
         }
     }
@@ -113,7 +113,7 @@ const fn clone_range(r: &LineRange) -> LineRange {
 }
 
 // Helper functions for quick construction of error values
-impl ObjError {
+impl ObjLoadError {
     #[inline(always)]
     pub(super) fn unknown_mtl(lines: &LineRange, name: &str) -> Self {
         let lines = clone_range(lines);
