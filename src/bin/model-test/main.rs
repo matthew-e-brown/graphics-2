@@ -1,16 +1,12 @@
-#![allow(unused)]
-
 use std::error::Error;
-use std::mem::{size_of, transmute};
 use std::process::ExitCode;
 use std::sync::mpsc::Receiver;
 
-use bytemuck::offset_of;
 use glfw::{Context, Glfw, Window, WindowEvent};
+use gloog::loader;
 use gloog::loader::obj::{ObjModel, ObjVertex};
-use gloog::{loader, RawModelData};
-use gloog_core::bindings::types::GLuint;
 use gloog_core::types::{
+    BufferID,
     BufferTarget,
     BufferUsage,
     ClearMask,
@@ -20,10 +16,11 @@ use gloog_core::types::{
     ProgramID,
     ShaderType,
     UniformLocation,
+    VertexArrayID,
     VertexAttribType,
 };
 use gloog_core::GLContext;
-use gloog_math::{Mat4, Vec2, Vec3};
+use gloog_math::{Mat4, Vec3, Vec4};
 use log::info;
 use simple_logger::SimpleLogger;
 
@@ -58,107 +55,56 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
     gl.clear_color(0.20, 0.20, 0.20, 1.0);
     gl.enable(EnableCap::DepthTest);
     gl.enable(EnableCap::PrimitiveRestartFixedIndex);
-
-    // Finally load the model
-    let model = loader::obj::ObjModel::from_file(model_path, None)?;
-    info!("Loaded model with {} vertices and {} groups", model.vertex_buffer().len(), model.groups().len());
+    gl.enable(EnableCap::Multisample);
 
     // Initialize program program
     let program = setup_program(&gl)?;
     gl.use_program(program);
 
-    let uniforms = Uniforms::get(&gl, program);
-    info!("Loaded uniforms");
+    let uniforms = AllUniforms::get(&gl, program);
+    info!("Loaded uniforms: {uniforms:?}");
 
-    // Make buffers for vertices
-    let vbo = gl.create_buffer();
-    gl.bind_buffer(BufferTarget::ArrayBuffer, vbo);
+    let view_matrix = look_at(&Vec3::new(0., 0., 600.), &Vec3::new(0., 0., 0.));
+    let proj_matrix = perspective(60.0, 1.00, 0.25, 1000.0);
 
-    // SAFETY: repr(C)
-    gl.buffer_data(
-        BufferTarget::ArrayBuffer,
-        unsafe { transmute::<&[ObjVertex], &[u8]>(model.vertex_buffer()) },
-        BufferUsage::StaticDraw,
-    );
+    gl.uniform_matrix_4fv(uniforms.matrix.proj, false, &[proj_matrix.into()]);
+    gl.uniform_matrix_4fv(uniforms.matrix.view, false, &[view_matrix.into()]);
 
-    // Make VAO and EBOs for each group
-    let all_vao = gl.create_vertex_arrays(model.groups().len());
-    let all_ebo = gl.create_buffers(model.groups().len());
+    // Finally load the model
+    let model = loader::obj::ObjModel::from_file(model_path, None)?;
+    let mut object = Thingy::init(&gl, &model);
 
-    let vao_groups = model
-        .groups()
-        .iter()
-        .enumerate()
-        .map(|(i, group)| {
-            let vao = all_vao[i];
-            let ebo = all_ebo[i];
-
-            gl.bind_vertex_array(vao);
-
-            #[rustfmt::skip] gl.vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_POSITION);
-            #[rustfmt::skip] gl.vertex_attrib_pointer(1, 2, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_TEX_COORD);
-            #[rustfmt::skip] gl.vertex_attrib_pointer(2, 3, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_NORMAL);
-
-            gl.enable_vertex_attrib_array(0);
-            gl.enable_vertex_attrib_array(1);
-            gl.enable_vertex_attrib_array(2);
-
-            gl.bind_buffer(BufferTarget::ElementArrayBuffer, ebo);
-            gl.buffer_data(
-                BufferTarget::ElementArrayBuffer,
-                unsafe { transmute::<&[GLuint], &[u8]>(group.index_buffer()) },
-                BufferUsage::StaticDraw,
-            );
-
-            (group, vao)
-        })
-        .collect::<Vec<_>>();
-
-    gl.unbind_vertex_array();
-
-    drop(all_vao);
-    drop(all_ebo);
-
-    let view_matrix = look_at(&Vec3::new(0., 0., 2.), &Vec3::new(0., 0., 0.));
-    let proj_matrix = perspective(60.0, 1.00, 0.25, 50.0);
-
-    let mut pos = Vec3::new(0., 0., 0.);
-    let mut rot = Vec3::new(0., 0., 0.);
-    let mut scl = Vec3::new(0.5, 0.5, 0.5);
+    let lights = vec![
+        Light::white(Vec3::new(5.0, 5.0, 5.0)),
+        /* ... */
+    ];
 
     while !window.should_close() {
         gl.clear(ClearMask::COLOR | ClearMask::DEPTH);
 
-        gl.uniform_matrix_4fv(uniforms.matrix.model, false, &[model_matrix(&pos, &rot, &scl).into()]);
-        gl.uniform_matrix_4fv(uniforms.matrix.view, false, &[view_matrix.into()]);
-        gl.uniform_matrix_4fv(uniforms.matrix.proj, false, &[proj_matrix.into()]);
+        // Send light uniforms
+        gl.uniform_1i(uniforms.num_lights, lights.len() as i32);
+        for (i, light) in lights.iter().enumerate() {
+            gl.uniform_3fv(uniforms.lights[i].diffuse, &[light.diffuse.into()]);
+            gl.uniform_3fv(uniforms.lights[i].ambient, &[light.ambient.into()]);
+            gl.uniform_3fv(uniforms.lights[i].specular, &[light.specular.into()]);
 
-        for &(group, vao) in &vao_groups {
-            let m = &group.material;
+            let lp4_ws = Vec4::from3(light.position, 1.0);
+            let lp4_vs = view_matrix * lp4_ws;
+            let lp3_vs = Vec3::new(lp4_vs[0], lp4_vs[1], lp4_vs[2]);
 
-            let diffuse = m.diffuse.unwrap_or(Vec3::new(1., 1., 1.));
-            let ambient = m.ambient.unwrap_or(Vec3::new(1., 1., 1.));
-            let specular = m.specular.unwrap_or(Vec3::new(1., 1., 1.));
-            let spec_pow = m.spec_pow.unwrap_or(30.0);
-            let alpha = m.alpha.unwrap_or(1.0);
-
-            gl.uniform_3fv(uniforms.material.diffuse, &[diffuse.into()]);
-            gl.uniform_3fv(uniforms.material.ambient, &[ambient.into()]);
-            gl.uniform_3fv(uniforms.material.specular, &[specular.into()]);
-            gl.uniform_1f(uniforms.material.spec_pow, spec_pow);
-            gl.uniform_1f(uniforms.material.alpha, alpha);
-
-            gl.bind_vertex_array(vao);
-            gl.draw_elements(DrawMode::TriangleFan, group.index_buffer().len(), DrawElementsType::UnsignedInt, 0);
+            gl.uniform_3fv(uniforms.lights[i].position, &[lp3_vs.into()]);
         }
+
+        object.draw(&view_matrix, &uniforms);
 
         window.swap_buffers();
         glfw.poll_events();
 
         let time = (glfw.get_time() % f32::MAX as f64) as f32;
-        rot.x = (time * 20.0).to_radians();
-        rot.y = (time * 15.0).to_radians();
-        rot.z = (time * 10.0).to_radians();
+        object.rot.x = (time * 20.0).to_radians();
+        object.rot.y = (time * 15.0).to_radians();
+        object.rot.z = (time * 10.0).to_radians();
 
         for (_, event) in glfw::flush_messages(&events) {
             if let WindowEvent::Key(glfw::Key::Escape, _, glfw::Action::Press, _) = event {
@@ -171,16 +117,13 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
 }
 
 
-fn draw_model(model: &ObjModel) {
-    for group in model.groups() {}
-}
-
-
 fn init_gl() -> Result<(Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext), Box<dyn Error>> {
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS)?;
 
     glfw.window_hint(glfw::WindowHint::ContextVersion(4, 6));
     glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
+
+    glfw.window_hint(glfw::WindowHint::Samples(Some(4)));
 
     glfw.window_hint(glfw::WindowHint::DoubleBuffer(true));
     glfw.window_hint(glfw::WindowHint::FocusOnShow(true));
@@ -201,6 +144,127 @@ fn init_gl() -> Result<(Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext), 
     gl.viewport(0, 0, width, height);
 
     Ok((glfw, window, events, gl))
+}
+
+
+struct Thingy<'gl, 'a> {
+    gl: &'gl GLContext,
+    model: &'a ObjModel,
+    pub pos: Vec3,
+    pub rot: Vec3,
+    pub scl: Vec3,
+    vao: VertexArrayID,
+    _vbo: BufferID,
+    _ebo: BufferID,
+}
+
+impl<'gl, 'a> Thingy<'gl, 'a> {
+    fn init(gl: &'gl GLContext, model: &'a ObjModel) -> Self {
+        let vao = gl.create_vertex_array();
+        let buffers = gl.create_buffers(2);
+        let vbo = buffers[0];
+        let ebo = buffers[1];
+
+        gl.bind_vertex_array(vao);
+
+        gl.bind_buffer(BufferTarget::ArrayBuffer, vbo);
+        gl.buffer_data(BufferTarget::ArrayBuffer, bytemuck::cast_slice(model.vertex_data()), BufferUsage::StaticDraw);
+
+        gl.vertex_attrib_pointer(0, 3, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_POSITION);
+        gl.vertex_attrib_pointer(1, 3, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_NORMAL);
+        gl.vertex_attrib_pointer(2, 2, VertexAttribType::Float, false, ObjVertex::STRIDE, ObjVertex::OFFSET_TEX_COORD);
+
+        gl.enable_vertex_attrib_array(0);
+        gl.enable_vertex_attrib_array(1);
+        gl.enable_vertex_attrib_array(2);
+
+        gl.bind_buffer(BufferTarget::ElementArrayBuffer, ebo);
+        gl.named_buffer_data(ebo, bytemuck::cast_slice(model.index_data()), BufferUsage::StreamDraw);
+
+        gl.unbind_vertex_array();
+
+        Self {
+            gl,
+            model,
+            pos: Vec3::new(0., 0., 0.),
+            rot: Vec3::new(0., 0., 0.),
+            scl: Vec3::new(0.5, 0.5, 0.5),
+            vao,
+            _vbo: vbo,
+            _ebo: ebo,
+        }
+    }
+
+    fn draw(&self, view_matrix: &Mat4, uniforms: &AllUniforms) {
+        let &Self { gl, model, vao, .. } = self;
+
+        let model_matrix = model_matrix(&self.pos, &self.rot, &self.scl);
+        let normal_matrix = (view_matrix * model_matrix).inverse().transpose();
+
+        gl.uniform_matrix_4fv(uniforms.matrix.model, false, &[model_matrix.into()]);
+        gl.uniform_matrix_4fv(uniforms.matrix.normal, false, &[normal_matrix.into()]);
+
+        gl.bind_vertex_array(vao);
+
+        for group in model.groups() {
+            let diffuse = group.material.diffuse.unwrap_or(Vec3::new(1., 1., 1.));
+            let ambient = group.material.ambient.unwrap_or(Vec3::new(1., 1., 1.));
+            let specular = group.material.specular.unwrap_or(Vec3::new(1., 1., 1.));
+            let spec_pow = group.material.spec_pow.unwrap_or(30.0);
+            let alpha = group.material.alpha.unwrap_or(1.0);
+
+            gl.uniform_3fv(uniforms.material.diffuse, &[diffuse.into()]);
+            gl.uniform_3fv(uniforms.material.ambient, &[ambient.into()]);
+            gl.uniform_3fv(uniforms.material.specular, &[specular.into()]);
+            gl.uniform_1f(uniforms.material.spec_pow, spec_pow);
+            gl.uniform_1f(uniforms.material.alpha, alpha);
+
+            let offset = group.indices().start;
+            let count = group.indices().count();
+            gl.draw_elements(DrawMode::TriangleFan, count, DrawElementsType::UnsignedInt, offset);
+        }
+
+        gl.unbind_vertex_array();
+    }
+}
+
+
+#[derive(Debug, Clone)]
+struct Light {
+    pub diffuse: Vec3,
+    pub ambient: Vec3,
+    pub specular: Vec3,
+    pub position: Vec3,
+}
+
+impl Light {
+    pub fn from_color(color: Vec3, position: Vec3) -> Self {
+        Self {
+            diffuse: color,
+            ambient: color * 0.1,
+            specular: Vec3::new(1.0, 1.0, 1.0),
+            position,
+        }
+    }
+
+    pub fn white(position: Vec3) -> Self {
+        Self::from_color(Vec3::new(1.0, 1.0, 1.0), position)
+    }
+
+    #[allow(unused)]
+    pub fn red(position: Vec3) -> Self {
+        Self::from_color(Vec3::new(1.0, 0.0, 0.0), position)
+    }
+
+    #[allow(unused)]
+    pub fn green(position: Vec3) -> Self {
+        Self::from_color(Vec3::new(0.0, 1.0, 0.0), position)
+    }
+
+    #[allow(unused)]
+    pub fn blue(position: Vec3) -> Self {
+        Self::from_color(Vec3::new(0.0, 0.0, 1.0), position)
+    }
 }
 
 
@@ -338,6 +402,7 @@ struct MatrixUniforms {
     normal: UniformLocation,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 struct LightUniforms {
     position: UniformLocation,
@@ -346,36 +411,55 @@ struct LightUniforms {
     specular: UniformLocation,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
-struct Uniforms {
+struct AllUniforms {
     matrix: MatrixUniforms,
     material: MaterialUniforms,
     num_lights: UniformLocation,
     lights: [LightUniforms; 8],
 }
 
-impl Uniforms {
+impl AllUniforms {
     pub fn get(gl: &GLContext, program: ProgramID) -> Self {
         Self {
             matrix: MatrixUniforms {
-                proj: gl.get_uniform_location(program, "uProjMatrix").unwrap(),
-                view: gl.get_uniform_location(program, "uViewMatrix").unwrap(),
-                model: gl.get_uniform_location(program, "uModelMatrix").unwrap(),
-                normal: gl.get_uniform_location(program, "uNormMatrix").unwrap(),
+                proj: gl.get_uniform_location(program, "uProjMatrix").unwrap_or(UniformLocation(-1)),
+                view: gl.get_uniform_location(program, "uViewMatrix").unwrap_or(UniformLocation(-1)),
+                model: gl.get_uniform_location(program, "uModelMatrix").unwrap_or(UniformLocation(-1)),
+                normal: gl.get_uniform_location(program, "uNormMatrix").unwrap_or(UniformLocation(-1)),
             },
             material: MaterialUniforms {
-                diffuse: gl.get_uniform_location(program, "uMaterial.diffuse").unwrap(),
-                ambient: gl.get_uniform_location(program, "uMaterial.ambient").unwrap(),
-                specular: gl.get_uniform_location(program, "uMaterial.specular").unwrap(),
-                spec_pow: gl.get_uniform_location(program, "uMaterial.specPow").unwrap(),
-                alpha: gl.get_uniform_location(program, "uMaterial.alpha").unwrap(),
+                diffuse: gl
+                    .get_uniform_location(program, "uMaterial.diffuse")
+                    .unwrap_or(UniformLocation(-1)),
+                ambient: gl
+                    .get_uniform_location(program, "uMaterial.ambient")
+                    .unwrap_or(UniformLocation(-1)),
+                specular: gl
+                    .get_uniform_location(program, "uMaterial.specular")
+                    .unwrap_or(UniformLocation(-1)),
+                spec_pow: gl
+                    .get_uniform_location(program, "uMaterial.specPow")
+                    .unwrap_or(UniformLocation(-1)),
+                alpha: gl
+                    .get_uniform_location(program, "uMaterial.alpha")
+                    .unwrap_or(UniformLocation(-1)),
             },
-            num_lights: gl.get_uniform_location(program, "uNumLights").unwrap(),
+            num_lights: gl.get_uniform_location(program, "uNumLights").unwrap_or(UniformLocation(-1)),
             lights: std::array::from_fn(|i| LightUniforms {
-                position: gl.get_uniform_location(program, &format!("uLights[{i}].position")).unwrap(),
-                diffuse: gl.get_uniform_location(program, &format!("uLights[{i}].diffuse")).unwrap(),
-                ambient: gl.get_uniform_location(program, &format!("uLights[{i}].ambient")).unwrap(),
-                specular: gl.get_uniform_location(program, &format!("uLights[{i}].specular")).unwrap(),
+                position: gl
+                    .get_uniform_location(program, &format!("uLights[{i}].position"))
+                    .unwrap_or(UniformLocation(-1)),
+                diffuse: gl
+                    .get_uniform_location(program, &format!("uLights[{i}].diffuse"))
+                    .unwrap_or(UniformLocation(-1)),
+                ambient: gl
+                    .get_uniform_location(program, &format!("uLights[{i}].ambient"))
+                    .unwrap_or(UniformLocation(-1)),
+                specular: gl
+                    .get_uniform_location(program, &format!("uLights[{i}].specular"))
+                    .unwrap_or(UniformLocation(-1)),
             }),
         }
     }
