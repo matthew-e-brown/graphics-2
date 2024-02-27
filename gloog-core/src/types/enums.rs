@@ -353,3 +353,20 @@ gl_enum! {
         SPIRVExtensions => SPIR_V_EXTENSIONS,
     }
 }
+
+
+gl_enum! {
+    pub enum FrontFaceDirection {
+        CW => CW,
+        CCW => CCW,
+    }
+}
+
+
+gl_enum! {
+    pub enum TriangleFace {
+        Back => BACK,
+        Front => FRONT,
+        FrontAndBack => FRONT_AND_BACK,
+    }
+}
