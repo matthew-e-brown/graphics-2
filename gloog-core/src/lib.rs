@@ -2,8 +2,9 @@ mod funcs;
 mod macros;
 pub mod types;
 
-pub(crate) use self::macros::*;
-pub use self::bindings::InitFailureMode;
+pub use crate::bindings::InitFailureMode;
+pub(crate) use crate::macros::*;
+use crate::types::DebugMessage;
 
 
 /// Raw OpenGL bindings, generated from the specification.
@@ -17,8 +18,20 @@ pub mod bindings {
 /// According to the specification, function pointers loaded for OpenGL are not valid on threads other than the one that
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
 pub struct GLContext {
+    /// Collection of loaded OpenGL function pointers.
     gl: bindings::GLPointers,
+
+    /// The current OpenGL debug callback.
+    debug_callback: Option<Box<dyn FnMut(DebugMessage) + Sync + 'static>>,
 }
+
+impl Drop for GLContext {
+    fn drop(&mut self) {
+        // Ensure that OpenGL doesn't try to call our debugging callback when this struct goes away.
+        self.unset_debug_message_callback();
+    }
+}
+
 
 // Other implementations are in other files: see the `funcs` module.
 
@@ -39,8 +52,9 @@ impl GLContext {
         loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void,
         failure_mode: InitFailureMode,
     ) -> Result<Self, &'static str> {
-        match unsafe { bindings::GLPointers::init(loader_fn, failure_mode) } {
-            Ok(gl) => Ok(Self { gl }),
+        let raw_ptrs = unsafe { bindings::GLPointers::init(loader_fn, failure_mode) };
+        match raw_ptrs {
+            Ok(gl) => Ok(Self { gl, debug_callback: None }),
             Err(e) => Err(e),
         }
     }

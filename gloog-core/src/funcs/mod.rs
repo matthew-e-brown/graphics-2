@@ -1,4 +1,5 @@
 mod buffers;
+mod debug;
 mod shaders;
 mod uniforms;
 mod vertex;

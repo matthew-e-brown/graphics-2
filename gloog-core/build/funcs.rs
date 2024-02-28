@@ -10,7 +10,8 @@ use crate::STRUCT_NAME;
 
 /// Output the declaration for the struct of function pointers.
 pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    writedoc!(dest,
+    writedoc!(
+        dest,
         r#"
             /// How [`{0}::init`] should behave when a function pointer cannot be loaded.
             ///

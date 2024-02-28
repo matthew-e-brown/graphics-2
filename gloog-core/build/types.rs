@@ -35,7 +35,7 @@ pub fn write_types_module(dest: &mut impl Write) -> io::Result<()> {
             /// Unsigned binary integer.
             pub type GLubyte = u8;
             /// Characters making up strings.
-            pub type GLchar = i8;
+            pub type GLchar = core::ffi::c_char; // FFI type since signedness of char will likely differ by target
             /// Signed two's complement binary integer.
             pub type GLshort = i16;
             /// Unsigned binary integer.
