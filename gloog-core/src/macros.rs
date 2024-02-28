@@ -113,6 +113,8 @@ macro_rules! gl_enum {
         $vis:vis enum $enum_name:ident {}
     ) => {
         $(#[$enum_attrs])*
+        #[repr(u32)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {}
     };
     // Main implementation
