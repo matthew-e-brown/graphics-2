@@ -10,8 +10,17 @@ gl_newtype!(pub struct BufferID(GLuint));
 gl_newtype!(pub struct ShaderID(GLuint));
 gl_newtype!(pub struct ProgramID(GLuint));
 gl_newtype!(pub struct VertexArrayID(GLuint));
+
 gl_newtype!(pub struct UniformLocation(pub GLint));
 gl_newtype!(pub struct VertexAttribLocation(pub GLuint));
+
+
+impl UniformLocation {
+    /// Check if this uniform was found in the shader.
+    pub const fn is_some(&self) -> bool {
+        self.0 != -1
+    }
+}
 
 impl Into<VertexAttribLocation> for GLuint {
     fn into(self) -> VertexAttribLocation {
