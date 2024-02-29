@@ -88,15 +88,15 @@ pub struct ObjModel {
 
 impl ObjModel {
     pub fn vertex_data(&self) -> &[ObjVertex] {
-        &self.data
+        &self.data[..]
     }
 
     pub fn index_data(&self) -> &[GLuint] {
-        &self.indices
+        &self.indices[..]
     }
 
     pub fn groups(&self) -> &[ObjGroup] {
-        &self.groups
+        &self.groups[..]
     }
 }
 
@@ -121,8 +121,8 @@ impl ObjGroup {
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct ObjVertex {
     position: Vec3,
-    tex_coord: Vec2,
     normal: Vec3,
+    tex_coord: Vec2,
 }
 
 macro_rules! vertex_offset {
@@ -130,8 +130,8 @@ macro_rules! vertex_offset {
         // We don't really need to care if the memory we're getting pointers to has been initialized properly, so we
         // just allocate some zeroes.
         let vert = unsafe { std::mem::MaybeUninit::<ObjVertex>::zeroed().assume_init() };
-        let base = std::ptr::from_ref(&vert) as *const u8;
-        let field = std::ptr::from_ref(&vert.$field) as *const u8;
+        let base = std::ptr::addr_of!(vert) as *const u8;
+        let field = std::ptr::addr_of!(vert.$field) as *const u8;
         unsafe { field.offset_from(base) as usize }
     }};
 }
@@ -272,19 +272,16 @@ impl ObjModel {
                         face_idx_buffer.push(vertices?);
                     }
 
-                    // Check that we pushed at least three vertices for this face, also double check we don't have too
-                    // many elements for this face (since we're using a u16 to reduce the footprint of this function).
+                    // Verify amount of vertices on this face
                     let pushed = face_idx_buffer.len() - before_push;
                     if pushed < 3 {
                         return Err(ObjLoadError::f_too_few(&line_nums, pushed));
-                    } else if pushed > u16::MAX as usize {
+                    } else if pushed > u32::MAX as usize {
                         return Err(ObjLoadError::f_too_many(&line_nums, pushed));
                     }
 
-                    // Trim the count down to smaller number type for memory savings; also save the material that this
-                    // face used.
-                    face_vert_counts.push(pushed as u16);
-                    face_material_map.push(curr_material);
+                    face_vert_counts.push(pushed as u32); // how many verts this face has; smaller number for mem usage
+                    face_material_map.push(curr_material); // also track which material it used
                 },
                 "usemtl" => {
                     match material_indices.get(line) {
@@ -335,12 +332,6 @@ impl ObjModel {
         let mut index_groups = HashMap::new();
         let mut total_size = 0;
 
-        let debug_get_mtl_name = |mtl_index: Option<usize>| {
-            mtl_index
-                .and_then(|idx| material_indices.iter().find(|(_, &i)| i == idx).map(|(name, _)| &name[..]))
-                .unwrap_or("[NO MATERIAL]")
-        };
-
         for (vert_count, material_idx) in face_vert_counts.into_iter().zip(face_material_map.into_iter()) {
             // This loop runs once per face
             // ----------------------------------------------------------------
@@ -367,7 +358,16 @@ impl ObjModel {
                 let c = v_data[vert_indices[2].0.get() - 1];
                 let ab = b - a;
                 let ac = c - a;
-                Some(ab.cross(&ac))
+                let norm = ab.cross(&ac);
+
+                // All the vertices in this face now have new surface normals; we have to push these into our data list
+                // and update these vertices reference numbers.
+                vn_data.push(norm);
+                for (_, _, vn_idx) in &mut face_idx_buffer[..vert_count] {
+                    *vn_idx = Some(NonZeroUsize::new(vn_data.len()).unwrap());
+                }
+
+                Some(norm)
             } else {
                 None
             };
@@ -381,8 +381,6 @@ impl ObjModel {
                 // push it into this group's list of indices. If not, go grab the necessary data, insert into the vertex
                 // buffer, and push the new index.
 
-                trace!("adding index {:?} to material {}", vert_indices, debug_get_mtl_name(material_idx));
-
                 index_list.push(*vertex_map.entry(vert_indices).or_insert_with(|| {
                     // Don't forget to undo the 1-based indexing before actually doing our lookups.
                     let (v_idx, vt_idx, vn_idx) = vert_indices;
@@ -393,8 +391,8 @@ impl ObjModel {
 
                     vertex_data.push(ObjVertex {
                         position: v,
-                        tex_coord: vt,
                         normal: vn,
+                        tex_coord: vt,
                     });
 
                     // Already did a bounds-check earlier so we know this vertex's index won't overflow a `u32`
@@ -407,30 +405,25 @@ impl ObjModel {
             total_size += vert_count + 1;
         }
 
-        debug!(
-            "material groups:\n{:#?}",
-            index_groups
-                .iter()
-                .map(|(&material_idx, indices)| { (debug_get_mtl_name(material_idx), indices.len()) })
-                .collect::<HashMap<_, _>>(),
-        );
+        // Remove the last primitive reset index in each of the material groups, no need for it
+        for index_list in index_groups.values_mut() {
+            index_list.pop();
+            total_size -= 1;
+        }
 
         // Merge all the indices into one list, no longer grouped by material; keep the materials separate by
         // referencing indices into this new final buffer.
         let mut all_indices = Vec::with_capacity(total_size);
 
-        let num_groups = index_groups.len();
-        let group_list =
-            index_groups
-                .into_iter()
-                .fold(Vec::with_capacity(num_groups), |mut acc, (mtl_idx, indices)| {
-                    let material = mtl_idx.map(|i| parsed_materials[i].clone()).unwrap_or_default();
-                    let index_range = all_indices.len()..all_indices.len() + indices.len();
+        let group_list = Vec::with_capacity(index_groups.len());
+        let group_list = index_groups.into_iter().fold(group_list, |mut acc, (mtl_idx, indices)| {
+            let material = mtl_idx.map(|i| parsed_materials[i].clone()).unwrap_or_default();
+            let index_range = all_indices.len()..all_indices.len() + indices.len();
 
-                    all_indices.extend(indices);
-                    acc.push(ObjGroup { material, index_range });
-                    acc
-                });
+            all_indices.extend(indices);
+            acc.push(ObjGroup { material, index_range });
+            acc
+        });
 
         info!(
             "finished loading model from `{}`: vertices: {}, indices: {}, material groups: {}",
@@ -439,8 +432,6 @@ impl ObjModel {
             all_indices.len(),
             group_list.len(),
         );
-
-        debug!("material groups: {:?}", group_list.iter().map(|g| g.index_range.clone()).collect::<Vec<_>>());
 
         // Convert our indices into boxed slices, and finally grab the actual material values.
         Ok(ObjModel {
@@ -482,8 +473,6 @@ fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
         trace!("found 'v' directive with {} values; only the first 3 will be used", floats.len());
 
         let vertex = [floats[0], floats[1], floats[2]].into();
-        trace!("parsed vertex {vertex:?}");
-
         Ok(vertex)
     } else {
         if floats.len() == 4 && floats[3] != 1.0 {
@@ -495,7 +484,6 @@ fn parse_v(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
 
         // Take the first three and convert them into an array, then into a vector; we know there're at least 3.
         let vertex = [floats[0], floats[1], floats[2]].into();
-        trace!("parsed vertex {vertex:?}");
         Ok(vertex)
     }
 }
@@ -513,7 +501,6 @@ fn parse_vn(text: &str, lines: &LineRange) -> ObjResult<Vec3> {
     } else {
         // We know there's exactly three now
         let normal = [floats[0], floats[1], floats[2]].into();
-        trace!("parsed normal {normal:?}");
         Ok(normal)
     }
 }
@@ -579,7 +566,7 @@ fn parse_f<'a>(
             match ref_str.parse::<isize>() {
                 // Positive: check for overflow.
                 Ok(i) if i > 0 => match usize::try_from(i).unwrap() {
-                    i if i - 1 < vec_len => Ok(NonZeroUsize::new(i).unwrap()),
+                    i if i <= vec_len => Ok(NonZeroUsize::new(i).unwrap()),
                     _ => Err(ObjLoadError::f_index_range(lines, vec_name, i, vec_len)),
                 },
                 // Negative: subtract it from list size, check for overflow, and add one to return to 1-based index.

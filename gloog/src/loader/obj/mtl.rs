@@ -7,7 +7,7 @@ use std::path::Path;
 
 use gloog_math::Vec3;
 use image::ImageResult;
-use log::info;
+use log::{info, debug, warn};
 
 use super::error::{MtlLoadError, MtlResult};
 use super::{read_ws_verts, trim_comment, CachedImage, ObjMaterial};
@@ -36,7 +36,7 @@ pub fn parse_mtl_file(
         macro_rules! set_single {
             ($prop:literal, $mtl:ident . $field:ident = $value:expr) => {{
                 if material.$field.is_some() {
-                    info!("multiple values given for {p} in material {m}; skipping.", p = $prop, m = $mtl);
+                    debug!("multiple values given for {p} in material {m}; skipping.", p = $prop, m = $mtl);
                 }
 
                 let _ = material.$field.insert($value);
@@ -93,13 +93,13 @@ pub fn parse_mtl_file(
                     "Ns" => set_single!("Ns", mtl.spec_pow = parse_scalar(line, &line_nums)?),
                     "d" => set_single!("d or Tr", mtl.alpha = parse_scalar(line, &line_nums)?),
                     "Tr" => set_single!("d or Tr", mtl.alpha = 1.0 - parse_scalar(line, &line_nums)?),
-                    "map_Kd" => info!("texture map {directive} {line} is not yet supported"),
-                    "map_Ka" => info!("texture map {directive} {line} is not yet supported"),
-                    "map_Ks" => info!("texture map {directive} {line} is not yet supported"),
-                    "map_Ns" => info!("texture map {directive} {line} is not yet supported"),
-                    "map_d" => info!("texture map {directive} {line} is not yet supported"),
-                    "bump" | "map_bump" => info!("texture map {directive} {line} is not yet supported"),
-                    other => info!("unknown or unsupported directive {other} in material {mtl}; skipping."),
+                    "map_Kd" => warn!("texture map {directive} {line} is not yet supported"),
+                    "map_Ka" => warn!("texture map {directive} {line} is not yet supported"),
+                    "map_Ks" => warn!("texture map {directive} {line} is not yet supported"),
+                    "map_Ns" => warn!("texture map {directive} {line} is not yet supported"),
+                    "map_d" => warn!("texture map {directive} {line} is not yet supported"),
+                    "bump" | "map_bump" => warn!("texture map {directive} {line} is not yet supported"),
+                    other => debug!("unknown or unsupported directive {other} in material {mtl}; skipping."),
                 }
             } else {
                 // If we don't have a current name but the directive isn't `newmtl`, that's bad!!

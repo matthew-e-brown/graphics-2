@@ -52,19 +52,12 @@ vec3 blinnPhong(Material material, Light light) {
     return aProd + diff + spec;
 }
 
-vec3 shading(Material material, Light light) {
-    return material.diffuse * max(dot(vNormal, light.position - vPosition), 0.0);
-}
-
 
 void main() {
     fColor.xyz = vec3(0.0);
 
     for (int i = 0; i < uNumLights && i < MAX_LIGHTS; i++) {
         fColor.xyz += blinnPhong(uMaterial, uLights[i]);
-        // fColor.xyz += shading(uMaterial, uLights[i]);
-        // fColor.xyz += uMaterial.diffuse * uLights[i].diffuse;
-        // fColor.xyz = uLights[i].position - vPosition;
     }
 
     fColor.a = 1.0;

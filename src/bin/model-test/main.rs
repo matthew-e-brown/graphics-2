@@ -2,7 +2,7 @@ use std::error::Error;
 use std::process::ExitCode;
 use std::sync::mpsc::Receiver;
 
-use glfw::{Context, Glfw, Window, WindowEvent};
+use glfw::{Context, Glfw, OpenGlProfileHint, SwapInterval, Window, WindowEvent, WindowHint, WindowMode};
 use gloog::loader;
 use gloog::loader::obj::{ObjModel, ObjVertex};
 use gloog_core::types::{
@@ -15,14 +15,14 @@ use gloog_core::types::{
     EnableCap,
     ProgramID,
     ShaderType,
+    StringName,
     UniformLocation,
     VertexArrayID,
     VertexAttribType,
 };
-use gloog_core::GLContext;
-use gloog_math::{Mat4, Vec3, Vec4};
-use log::info;
-use simple_logger::SimpleLogger;
+use gloog_core::{GLContext, InitFailureMode};
+use gloog_math::{Mat3, Mat4, Vec3, Vec4};
+use log::{debug, info, log};
 
 
 pub fn main() -> ExitCode {
@@ -31,18 +31,12 @@ pub fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    SimpleLogger::new()
-        .with_local_timestamps()
-        .with_colors(true)
-        .with_level(log::LevelFilter::Debug)
-        .env()
-        .init()
-        .unwrap();
+    graphics_2::init_logger();
 
     match run(model_path) {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{e}");
+            eprintln!("encountered error: {e}");
             ExitCode::FAILURE
         },
     }
@@ -50,35 +44,41 @@ pub fn main() -> ExitCode {
 
 
 fn run(model_path: String) -> Result<(), Box<dyn Error>> {
-    let (mut glfw, mut window, events, gl) = init_gl()?;
+    // Attempt to load the model to catch parsing errors before we even bother booting OpenGL
+    let model = loader::obj::ObjModel::from_file(model_path, None)?;
+
+    let (mut glfw, mut window, events, mut gl) = init_gl()?;
+
+    gl.debug_message_callback(|msg| log::log!(msg.severity.log_level(), "{}", msg.as_str()));
+    let gl = gl; // un-mut
 
     gl.clear_color(0.20, 0.20, 0.20, 1.0);
     gl.enable(EnableCap::DepthTest);
     gl.enable(EnableCap::PrimitiveRestartFixedIndex);
     gl.enable(EnableCap::Multisample);
+    gl.enable(EnableCap::DebugOutput);
 
     // Initialize program program
     let program = setup_program(&gl)?;
     gl.use_program(program);
 
     let uniforms = AllUniforms::get(&gl, program);
-    info!("Loaded uniforms: {uniforms:?}");
 
-    let view_matrix = look_at(&Vec3::new(0., 0., 600.), &Vec3::new(0., 0., 0.));
-    let proj_matrix = perspective(60.0, 1.00, 0.25, 1000.0);
+    // Now initialize the model's data
+    let mut model = Thingy::init(&gl, &model);
+
+    let view_matrix = look_at(&Vec3::new(0.0, 0.5, 2.0), &Vec3::new(0.0, 0.5, 0.0));
+    let proj_matrix = perspective(60.0, 1.00, 0.25, 50.0);
 
     gl.uniform_matrix_4fv(uniforms.matrix.proj, false, &[proj_matrix.into()]);
     gl.uniform_matrix_4fv(uniforms.matrix.view, false, &[view_matrix.into()]);
 
-    // Finally load the model
-    let model = loader::obj::ObjModel::from_file(model_path, None)?;
-    let mut object = Thingy::init(&gl, &model);
-
     let lights = vec![
-        Light::white(Vec3::new(5.0, 5.0, 5.0)),
+        Light::white(Vec3::new(0.0, 3.0, 2.0)),
         /* ... */
     ];
 
+    let mut time1 = glfw.get_time() as f32;
     while !window.should_close() {
         gl.clear(ClearMask::COLOR | ClearMask::DEPTH);
 
@@ -96,21 +96,22 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
             gl.uniform_3fv(uniforms.lights[i].position, &[lp3_vs.into()]);
         }
 
-        object.draw(&view_matrix, &uniforms);
+        model.draw(&view_matrix, &uniforms);
 
         window.swap_buffers();
         glfw.poll_events();
 
-        let time = (glfw.get_time() % f32::MAX as f64) as f32;
-        object.rot.x = (time * 20.0).to_radians();
-        object.rot.y = (time * 15.0).to_radians();
-        object.rot.z = (time * 10.0).to_radians();
+        let time2 = (glfw.get_time() % f32::MAX as f64) as f32;
+        let d_time = time2 - time1;
+        model.rot.y += (d_time * 15.0).to_radians();
 
         for (_, event) in glfw::flush_messages(&events) {
             if let WindowEvent::Key(glfw::Key::Escape, _, glfw::Action::Press, _) = event {
                 window.set_should_close(true);
             }
         }
+
+        time1 = time2;
     }
 
     Ok(())
@@ -118,24 +119,39 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
 
 
 fn init_gl() -> Result<(Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext), Box<dyn Error>> {
+    info!("initializing window...");
+
+    debug!("initializing GLFW");
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS)?;
 
-    glfw.window_hint(glfw::WindowHint::ContextVersion(4, 6));
-    glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
+    glfw.window_hint(WindowHint::ContextVersion(4, 6));
+    glfw.window_hint(WindowHint::OpenGlProfile(OpenGlProfileHint::Core));
 
-    glfw.window_hint(glfw::WindowHint::Samples(Some(4)));
+    glfw.window_hint(WindowHint::Samples(Some(4)));
 
-    glfw.window_hint(glfw::WindowHint::DoubleBuffer(true));
-    glfw.window_hint(glfw::WindowHint::FocusOnShow(true));
-    glfw.window_hint(glfw::WindowHint::Focused(true));
+    glfw.window_hint(WindowHint::DoubleBuffer(true));
+    glfw.window_hint(WindowHint::FocusOnShow(true));
+    glfw.window_hint(WindowHint::Focused(true));
 
+    debug!("creating window");
     let (mut window, events) = glfw
-        .create_window(512, 512, "Model Loading Test", glfw::WindowMode::Windowed)
+        .create_window(512, 512, "Model Loading Test", WindowMode::Windowed)
         .ok_or("could not create the window")?;
 
-    let gl = GLContext::init(|symbol| window.get_proc_address(symbol))?;
+    debug!("loading GLContext");
+    let mut gl = GLContext::init(|symbol| window.get_proc_address(symbol), InitFailureMode::WarnAndContinue)?;
 
-    glfw.set_swap_interval(glfw::SwapInterval::Sync(1));
+    gl.debug_message_callback(move |message| {
+        let lvl = message.severity.log_level();
+        let str = message.body;
+        log!(lvl, "{str}");
+    });
+
+    let ver = gl.get_string(StringName::Version);
+    let vnd = gl.get_string(StringName::Vendor);
+    debug!("loaded OpenGL version {ver} with vendor {vnd}");
+
+    glfw.set_swap_interval(SwapInterval::Sync(1));
     window.set_resizable(false);
     window.set_key_polling(true);
     window.make_current();
@@ -143,6 +159,7 @@ fn init_gl() -> Result<(Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext), 
     let (width, height) = window.get_framebuffer_size();
     gl.viewport(0, 0, width, height);
 
+    info!("OpenGL and GLFW initialized.");
     Ok((glfw, window, events, gl))
 }
 
@@ -179,7 +196,7 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
         gl.enable_vertex_attrib_array(2);
 
         gl.bind_buffer(BufferTarget::ElementArrayBuffer, ebo);
-        gl.named_buffer_data(ebo, bytemuck::cast_slice(model.index_data()), BufferUsage::StreamDraw);
+        gl.named_buffer_data(ebo, bytemuck::cast_slice(model.index_data()), BufferUsage::StaticDraw);
 
         gl.unbind_vertex_array();
 
@@ -201,14 +218,26 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
         let model_matrix = model_matrix(&self.pos, &self.rot, &self.scl);
         let normal_matrix = (view_matrix * model_matrix).inverse().transpose();
 
+        // TODO: actually write a method to trim a Mat4 down to a Mat3 (and Vec4->Vec3 too lol)
+        #[rustfmt::skip]
+        let norm_matrix = Mat3::new(
+            normal_matrix[[0,0]], normal_matrix[[0,1]], normal_matrix[[0,2]],
+            normal_matrix[[1,0]], normal_matrix[[1,1]], normal_matrix[[1,2]],
+            normal_matrix[[2,0]], normal_matrix[[2,1]], normal_matrix[[2,2]],
+        );
+
         gl.uniform_matrix_4fv(uniforms.matrix.model, false, &[model_matrix.into()]);
-        gl.uniform_matrix_4fv(uniforms.matrix.normal, false, &[normal_matrix.into()]);
+        gl.uniform_matrix_3fv(uniforms.matrix.normal, false, &[norm_matrix.into()]);
 
         gl.bind_vertex_array(vao);
 
         for group in model.groups() {
             let diffuse = group.material.diffuse.unwrap_or(Vec3::new(1., 1., 1.));
-            let ambient = group.material.ambient.unwrap_or(Vec3::new(1., 1., 1.));
+            let ambient = group
+                .material
+                .ambient
+                .or(group.material.diffuse.map(|v| v * 0.5))
+                .unwrap_or(Vec3::new(1., 1., 1.));
             let specular = group.material.specular.unwrap_or(Vec3::new(1., 1., 1.));
             let spec_pow = group.material.spec_pow.unwrap_or(30.0);
             let alpha = group.material.alpha.unwrap_or(1.0);
@@ -219,7 +248,7 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
             gl.uniform_1f(uniforms.material.spec_pow, spec_pow);
             gl.uniform_1f(uniforms.material.alpha, alpha);
 
-            let offset = group.indices().start;
+            let offset = group.indices().start * 4; // !! DrawElements wants a ptr offset not an index offset !!
             let count = group.indices().count();
             gl.draw_elements(DrawMode::TriangleFan, count, DrawElementsType::UnsignedInt, offset);
         }
@@ -241,7 +270,7 @@ impl Light {
     pub fn from_color(color: Vec3, position: Vec3) -> Self {
         Self {
             diffuse: color,
-            ambient: color * 0.1,
+            ambient: color * 0.2,
             specular: Vec3::new(1.0, 1.0, 1.0),
             position,
         }
