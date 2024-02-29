@@ -6,21 +6,22 @@ use std::fmt::Debug;
 use std::sync::mpsc::Receiver;
 
 use glfw::{Action, Context, Glfw, Key, OpenGlProfileHint, SwapInterval, Window, WindowEvent, WindowHint, WindowMode};
-use gloog_core::types::{ClearMask, EnableCap, FrontFaceDirection, ProgramID, ShaderType, TriangleFace};
+use gloog_core::types::{ClearMask, EnableCap, ProgramID, ShaderType, StringName};
 use gloog_core::{GLContext, InitFailureMode};
 use gloog_math::{Mat4, Vec3, Vec4};
 use light::Light;
-use log::info;
+use log::{debug, log, info};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use rand_distr::{StandardNormal, Uniform};
-use simple_logger::SimpleLogger;
 
 use self::teapot::{Teapot, TeapotResolution};
 
 
 const NUM_TEAPOTS: usize = 16;
-const TEAPOT_RES: TeapotResolution = TeapotResolution::High;
+const DEFAULT_RES: TeapotResolution = TeapotResolution::Low;
+
+const LIGHT_COLORS: &[u32] = &[0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF];
 
 const CAMERA_START_POS: Vec3 = Vec3::new(20.0, 10.0, 20.0);
 const CAMERA_START_TGT: Vec3 = Vec3::new(0.0, 0.0, 0.0);
@@ -102,13 +103,14 @@ fn color(hex: u32, k: f32) -> Vec4 {
 }
 
 fn main() {
-    SimpleLogger::new()
-        .with_local_timestamps()
-        .with_colors(true)
-        .with_level(log::LevelFilter::Debug)
-        .env()
-        .init()
-        .unwrap();
+    graphics_2::init_logger();
+
+    let teapot_res = std::env::args().skip(1).next().and_then(|arg| match &arg[..] {
+        "1" | "low" | "LOW" => Some(TeapotResolution::Low),
+        "2" | "med" | "MED" | "medium" | "MEDIUM" => Some(TeapotResolution::Medium),
+        "3" | "high" | "HIGH" => Some(TeapotResolution::High),
+        _ => None,
+    }).unwrap_or(DEFAULT_RES);
 
     let mut rng = thread_rng();
 
@@ -121,10 +123,8 @@ fn main() {
     gl.clear_color(0.15, 0.15, 0.15, 1.0);
     gl.enable(EnableCap::DepthTest);
     gl.enable(EnableCap::Multisample);
-
+    gl.enable(EnableCap::DebugOutput);
     gl.enable(EnableCap::CullFace);
-    gl.cull_face(TriangleFace::Back);
-    gl.front_face(FrontFaceDirection::CCW);
 
     let mut palette = [
         (color(0x049EF4, 1.0), color(0x0B7FFF, 1.0)),
@@ -142,20 +142,19 @@ fn main() {
         .map(|i| {
             let (base_color, highlight) = palette[i % palette.len()];
             let shininess = rng.sample(Uniform::new(0.0, 1000.0));
-            let mut teapot = Teapot::new(&gl, TEAPOT_RES, base_color, base_color, highlight, shininess);
+            let mut teapot = Teapot::new(&gl, teapot_res, base_color, base_color, highlight, shininess);
 
             let x = rng.sample(StandardNormal);
             let y = rng.sample(StandardNormal);
             let z = rng.sample(StandardNormal);
             teapot.position = Vec3::new(x, y, z).norm() * 9.0;
-            info!("Teapot position: {:?}", teapot.position);
 
             teapot
         })
         .collect::<Vec<_>>();
 
     let teapot_program = Teapot::program().expect("Teapot has been initialized by now");
-    let mut lights = Vec::with_capacity(7);
+    let mut lights = Vec::with_capacity(1 + LIGHT_COLORS.len());
 
     lights.push(Light::new(
         &gl,
@@ -167,10 +166,8 @@ fn main() {
         None,
     ));
 
-    let light_colors = [0xFF0000, 0xFFFF00, 0x00FF00, 0x00FFFF, 0x0000FF, 0xFF00FF];
-
-    lights.extend(light_colors.iter().enumerate().map(|(i, &light_color)| {
-        let angle = (360.0 / (light_colors.len() as f32) * i as f32) / 180.0 * PI;
+    lights.extend(LIGHT_COLORS.iter().enumerate().map(|(i, &light_color)| {
+        let angle = (360.0 / (LIGHT_COLORS.len() as f32) * i as f32) / 180.0 * PI;
 
         let x = angle.cos();
         let y = rng.sample(StandardNormal);
@@ -224,7 +221,7 @@ fn main() {
                         _ => unreachable!(),
                     }
 
-                    info!("{key_status:?}");
+                    debug!("{key_status:?}");
                 },
                 _ => (),
             }
@@ -280,7 +277,13 @@ fn setup_window() -> (Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext) {
         .create_window(512, 512, "Graphics II - Teapot Test", WindowMode::Windowed)
         .expect("Could not create the window.");
 
-    let gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();
+    let mut gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();
+
+    gl.debug_message_callback(move |message| {
+        let lvl = message.severity.log_level();
+        let str = message.body;
+        log!(lvl, "{str}");
+    });
 
     glfw.set_swap_interval(SwapInterval::Sync(1));
     window.set_resizable(false);
@@ -289,6 +292,10 @@ fn setup_window() -> (Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext) {
 
     let (width, height) = window.get_framebuffer_size();
     gl.viewport(0, 0, width, height);
+
+    let ver = gl.get_string(StringName::Version);
+    let vnd = gl.get_string(StringName::Vendor);
+    info!("loaded OpenGL version {ver} with vendor {vnd}");
 
     (glfw, window, events, gl)
 }
@@ -366,10 +373,6 @@ fn handle_input(delta_time: f32, keys: &KeyStatus, camera_pos: &mut Vec3, camera
             *camera_pos = clamped_dist * cam_forward;
         }
     }
-
-    // if *camera_pos != before {
-    //     info!("new camera position: {camera_pos:?}");
-    // }
 }
 
 

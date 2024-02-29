@@ -21,7 +21,7 @@ struct Light {
 
 uniform Material material;
 uniform Light lights[MAX_LIGHTS];
-uniform int numLights;
+uniform int numLights = 0;
 
 out vec4 fColor;
 
