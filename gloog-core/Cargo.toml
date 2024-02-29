@@ -7,6 +7,8 @@ edition = "2021"
 
 build = "./build/main.rs"
 
+[dependencies]
+log = "0.4.20"
 
 [build-dependencies]
 convert_case = "0.6.0"

@@ -42,9 +42,9 @@ fn write_bindings<W: Write>(registry: &Registry, dest: &mut W) -> io::Result<()>
     writedoc!(
         dest,
         r#"
-            #[allow(dead_code)] use self::types::*;
-            #[allow(dead_code)] use core::ffi::c_void;
-            #[allow(dead_code)] type VoidPtr = *const c_void;
+            #[allow(unused)] use self::types::*;
+            #[allow(unused)] use core::ffi::{{c_void, c_char}};
+            #[allow(unused)] type VoidPtr = *const c_void;
         "#
     )?;
     writeln!(dest)?;

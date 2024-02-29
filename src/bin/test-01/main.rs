@@ -20,7 +20,7 @@ use gloog_core::types::{
     ShaderType,
     VertexAttribType,
 };
-use gloog_core::GLContext;
+use gloog_core::{GLContext, InitFailureMode};
 use gloog_math::{Mat4, Vec3};
 
 
@@ -61,7 +61,7 @@ pub fn main() {
         .create_window(512, 512, "Graphics II - Test 1", WindowMode::Windowed)
         .expect("Could not create the window.");
 
-    let gl = GLContext::init(|s| window.get_proc_address(s)).unwrap();
+    let gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();
 
     glfw.set_swap_interval(SwapInterval::Sync(1));
     window.set_resizable(false);

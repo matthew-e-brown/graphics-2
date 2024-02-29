@@ -7,14 +7,21 @@ edition = "2021"
 
 
 [dependencies]
+gloog = { path = "./gloog", version = "*" }
 gloog-core = { version = "0.1.0", path = "./gloog-core" }
 gloog-math = { version = "0.1.0", path = "./gloog-math" }
+
 bytemuck = "1.13.1"
 glfw = "0.52.0"
+log = "0.4.20"
+rand = "0.8.5"
+rand_distr = "0.4.3"
+simple_logger = { version = "4.3.3", features = ["timestamps", "colors", "stderr"] }
 
 
 [workspace]
 members = [
     "./gloog-core",
     "./gloog-math",
+    "./gloog",
 ]

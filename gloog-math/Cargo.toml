@@ -12,3 +12,4 @@ course (as opposed to something more formal like nalgebra).
 
 [dependencies]
 bytemuck = { version = "1.13.1", features = ["derive"] }
+thiserror = "1.0.57"

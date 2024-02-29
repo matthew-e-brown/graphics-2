@@ -49,12 +49,12 @@ macro_rules! convert {
 macro_rules! gl_newtype {
     (
         $(#[$attr:meta])*
-        $vis:vis struct $name:ident($inner:ty)$(;)?
+        $vis:vis struct $name:ident($inner_vis:vis $inner:ty)$(;)?
     ) => {
         $(#[$attr])*
         #[repr(transparent)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        $vis struct $name($inner);
+        $vis struct $name($inner_vis $inner);
 
         impl $name {
             /// Wraps a raw value returned from an OpenGL binding.
@@ -113,6 +113,8 @@ macro_rules! gl_enum {
         $vis:vis enum $enum_name:ident {}
     ) => {
         $(#[$enum_attrs])*
+        #[repr(u32)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {}
     };
     // Main implementation
