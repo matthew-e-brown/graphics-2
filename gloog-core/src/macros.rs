@@ -134,7 +134,7 @@ macro_rules! gl_enum {
         $vis enum $enum_name {
             $(
                 $(#[$field_attrs])*
-                $field_name = crate::bindings::$gl_name,
+                $field_name = crate::raw::$gl_name,
             )*
         }
 
@@ -149,7 +149,7 @@ macro_rules! gl_enum {
             #[allow(unused)]
             pub(crate) const fn from_raw(value: u32) -> Option<Self> {
                 match value{
-                    $( crate::bindings::$gl_name => Some(Self::$field_name), )*
+                    $( crate::raw::$gl_name => Some(Self::$field_name), )*
                     _ => None,
                 }
             }
@@ -211,7 +211,7 @@ macro_rules! gl_bitfield {
         impl $struct_name {
             $(
                 $(#[$const_attrs])*
-                pub const $const_name: $struct_name = $struct_name(crate::bindings::$gl_name);
+                pub const $const_name: $struct_name = $struct_name(crate::raw::$gl_name);
             )*
 
             /// Returns a set of all defined flags.

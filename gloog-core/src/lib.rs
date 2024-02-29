@@ -1,16 +1,12 @@
 mod funcs;
 mod macros;
+pub mod raw;
 pub mod types;
 
-pub use crate::bindings::InitFailureMode;
 pub(crate) use crate::macros::*;
+use crate::raw::GLPointers;
+pub use crate::raw::InitFailureMode;
 use crate::types::DebugMessage;
-
-
-/// Raw OpenGL bindings, generated from the specification.
-pub mod bindings {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-}
 
 
 /// A wrapper for an underlying collection of OpenGL functions.
@@ -19,7 +15,7 @@ pub mod bindings {
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
 pub struct GLContext {
     /// Collection of loaded OpenGL function pointers.
-    gl: bindings::GLPointers,
+    gl: GLPointers,
 
     /// The current OpenGL debug callback.
     debug_callback: Option<Box<dyn FnMut(DebugMessage) + Sync + 'static>>,
@@ -52,7 +48,7 @@ impl GLContext {
         loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void,
         failure_mode: InitFailureMode,
     ) -> Result<Self, &'static str> {
-        let raw_ptrs = unsafe { bindings::GLPointers::init(loader_fn, failure_mode) };
+        let raw_ptrs = unsafe { GLPointers::load(loader_fn, failure_mode) };
         match raw_ptrs {
             Ok(gl) => Ok(Self { gl, debug_callback: None }),
             Err(e) => Err(e),

@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use crate::bindings::types::*;
+use crate::raw::types::*;
 use crate::types::*;
 use crate::{convert, GLContext};
 
@@ -64,7 +64,7 @@ impl GLContext {
 
         let size = match size {
             n @ 1..=4 => n as GLsizei,
-            n if n == (crate::bindings::BGRA as usize) => n as GLsizei,
+            n if n == (crate::raw::BGRA as usize) => n as GLsizei,
             _ => panic!("vertex attribute size should be 1, 2, 3, 4, or GL_BGRA"),
         };
 

@@ -1,6 +1,6 @@
 use std::io;
 
-use gloog_core::bindings::types::GLuint;
+use gloog_core::raw::types::GLuint;
 use thiserror::Error;
 
 use crate::loader::{fmt_line_range, LineRange};

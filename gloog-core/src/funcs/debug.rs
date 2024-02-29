@@ -4,8 +4,8 @@ use std::ptr::{from_mut, from_ref};
 use std::slice;
 
 use super::DebugFilter;
-use crate::bindings::types::*;
-use crate::bindings::{DONT_CARE as GL_DONT_CARE, MAX_DEBUG_MESSAGE_LENGTH as GL_MAX_DEBUG_MESSAGE_LENGTH};
+use crate::raw::types::*;
+use crate::raw::{DONT_CARE as GL_DONT_CARE, MAX_DEBUG_MESSAGE_LENGTH as GL_MAX_DEBUG_MESSAGE_LENGTH};
 use crate::types::{DebugMessage, DebugSeverity, DebugSource, DebugType};
 use crate::{convert, GLContext};
 

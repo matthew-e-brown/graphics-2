@@ -3,8 +3,8 @@ mod flags;
 
 pub use self::enums::*;
 pub use self::flags::*;
-use crate::bindings::types::*;
 use crate::macros::gl_newtype;
+use crate::raw::types::*;
 
 gl_newtype!(pub struct BufferID(GLuint));
 gl_newtype!(pub struct ShaderID(GLuint));

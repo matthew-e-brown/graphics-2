@@ -1,6 +1,6 @@
 use std::ffi::CString;
 
-use crate::bindings::types::*;
+use crate::raw::types::*;
 use crate::types::*;
 use crate::{convert, GLContext};
 

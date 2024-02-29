@@ -10,7 +10,7 @@ use gloog_core::types::{ClearMask, EnableCap, ProgramID, ShaderType, StringName}
 use gloog_core::{GLContext, InitFailureMode};
 use gloog_math::{Mat4, Vec3, Vec4};
 use light::Light;
-use log::{debug, log, info};
+use log::{debug, info, log};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use rand_distr::{StandardNormal, Uniform};
@@ -105,12 +105,16 @@ fn color(hex: u32, k: f32) -> Vec4 {
 fn main() {
     graphics_2::init_logger();
 
-    let teapot_res = std::env::args().skip(1).next().and_then(|arg| match &arg[..] {
-        "1" | "low" | "LOW" => Some(TeapotResolution::Low),
-        "2" | "med" | "MED" | "medium" | "MEDIUM" => Some(TeapotResolution::Medium),
-        "3" | "high" | "HIGH" => Some(TeapotResolution::High),
-        _ => None,
-    }).unwrap_or(DEFAULT_RES);
+    let teapot_res = std::env::args()
+        .skip(1)
+        .next()
+        .and_then(|arg| match &arg[..] {
+            "1" | "low" | "LOW" => Some(TeapotResolution::Low),
+            "2" | "med" | "MED" | "medium" | "MEDIUM" => Some(TeapotResolution::Medium),
+            "3" | "high" | "HIGH" => Some(TeapotResolution::High),
+            _ => None,
+        })
+        .unwrap_or(DEFAULT_RES);
 
     let mut rng = thread_rng();
 

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use gloog_math::Vec3;
 use image::ImageResult;
-use log::{info, debug, warn};
+use log::{debug, info, warn};
 
 use super::error::{MtlLoadError, MtlResult};
 use super::{read_ws_verts, trim_comment, CachedImage, ObjMaterial};

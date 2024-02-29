@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::io::{self, Write};
 
 use gl_generator::{Api, Binding, Cmd, Registry};
@@ -8,41 +9,64 @@ use crate::rename::{rename_function, rename_lib_type, rename_parameter};
 use crate::STRUCT_NAME;
 
 
+/// Output raw a `GLenum` for all applicable types in the registry.
+pub fn write_enum_values(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
+    // Sort the enums into specific groups
+    let (standard, bitfield, other) = {
+        let mut reg_groups = BTreeSet::new();
+        let mut bit_groups = BTreeSet::new();
+
+        // Split regular and bitmask enums up
+        for group in registry.groups.values() {
+            for member in &group.enums {
+                match group.enums_type.as_deref() {
+                    None => reg_groups.insert(member.as_str()),
+                    Some("bitmask") => bit_groups.insert(member.as_str()),
+                    Some(other) => unimplemented!("unknown enum type: {other}"),
+                };
+            }
+        }
+
+        let mut standard = BTreeSet::new();
+        let mut bitfield = BTreeSet::new();
+        let mut other = BTreeSet::new();
+
+        // Filter for just the ones that're `GLenum`
+        for e in &registry.enums {
+            match &e.ty[..] {
+                "GLenum" if reg_groups.contains(e.ident.as_str()) => standard.insert(e),
+                "GLenum" if bit_groups.contains(e.ident.as_str()) => bitfield.insert(e),
+                _ => other.insert(e),
+            };
+        }
+
+        (standard, bitfield, other)
+    };
+
+    // Then iterate over those groups and create their values
+    let standard = standard.into_iter().map(|e| ("GLenum", e));
+    let bitfield = bitfield.into_iter().map(|e| ("GLbitfield", e));
+    let other = other.into_iter().map(|e| (&e.ty[..], e));
+
+    for (ty, e) in standard.chain(bitfield).chain(other) {
+        let ident = e.ident.as_str(); // no need to rename, they're already in `UPPER_SNAKE` from the spec
+        let value = e.value.as_str();
+
+        // Only add the linter warning thingy for the values that need it. This *should* only be the ones with little
+        // x's in them, i.e. `MAT2x3` and co.
+        if ident.chars().any(|c| c.is_lowercase()) {
+            write!(dest, "#[allow(non_upper_case_globals)] ")?;
+        }
+
+        writeln!(dest, "pub const {ident}: {ty} = {value};")?;
+    }
+
+    Ok(())
+}
+
+
 /// Output the declaration for the struct of function pointers.
 pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
-    writedoc!(
-        dest,
-        r#"
-            /// How [`{0}::init`] should behave when a function pointer cannot be loaded.
-            ///
-            /// Be careful with using options other than `Abort`. They should be considered `unsafe`. See their
-            /// documentation for more information.
-            #[derive(Debug, Clone, Copy)]
-            pub enum InitFailureMode {{
-                /// Any single function pointer failing to load will cause [`{0}` initialization][{0}] to stop and
-                /// return an [`Err`].
-                ///
-                /// As far as Rust safety guarantees go, **this is the only safe option.** All other options will result
-                /// in `{0}` being partially uninitialized, which violates Rust's initialization invariant.
-                Abort,
-                /// When a function pointer fails to load, a warning will [be logged][https://docs.rs/log] and
-                /// initialization will continue. The function pointer will be left as [`null`][std::ptr::null] instead.
-                ///
-                /// **This option is unsafe.** If a pointer fails to load, [`{0}`] will be left partially uninitialized,
-                /// which violates Rust's initialization invariant.
-                WarnAndContinue,
-                /// When a function pointer fails to load, initialization will continue as if it did not. The function
-                /// pointer will be left as [`null`][std::ptr::null] instead.
-                ///
-                /// **This option is unsafe.** If a pointer fails to load, [`{0}`] will be left partially uninitialized,
-                /// which violates Rust's initialization invariant.
-                ContinueSilently,
-            }}
-
-        "#,
-        STRUCT_NAME
-    )?;
-
     writedoc!(
         dest,
         r#"
@@ -59,6 +83,7 @@ pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Resu
     writeln!(dest, "}}")?;
     Ok(())
 }
+
 
 /// Output the constructor function for the function pointer struct.
 pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
@@ -78,7 +103,7 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
     // Just cuz there's a lot of `{}` in here, it'd be annoying to use `writedoc` on them.
     let init_fn_str = indoc! {r#"
         /// Loads all OpenGL function pointers. See [`InitFailureMode`] for more information.
-        pub unsafe fn init(
+        pub unsafe fn load(
             mut loader_fn: impl FnMut(&'static str) -> *const c_void,
             failure_mode: InitFailureMode,
         ) -> Result<Self, &'static str> {

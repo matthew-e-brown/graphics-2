@@ -1,7 +1,7 @@
 use std::ffi::CString;
 
-use crate::bindings::types::*;
-use crate::bindings::{COMPILE_STATUS, INFO_LOG_LENGTH, LINK_STATUS};
+use crate::raw::types::*;
+use crate::raw::{COMPILE_STATUS, INFO_LOG_LENGTH, LINK_STATUS};
 use crate::types::*;
 use crate::{convert, GLContext};
 

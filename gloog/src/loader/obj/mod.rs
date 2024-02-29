@@ -23,7 +23,7 @@ use std::sync::{Arc, Weak};
 
 use arrayvec::ArrayVec;
 use bytemuck::{Pod, Zeroable};
-use gloog_core::bindings::types::GLuint;
+use gloog_core::raw::types::GLuint;
 use gloog_math::{Vec2, Vec3};
 use image::{ImageBuffer, Luma, Rgba};
 use log::{debug, info, log, trace};
