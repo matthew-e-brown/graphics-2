@@ -253,8 +253,8 @@ fn setup_program(gl: &GLContext) -> ProgramID {
     let vert = gl.create_shader(ShaderType::Vertex);
     let frag = gl.create_shader(ShaderType::Fragment);
 
-    gl.shader_source(vert, &[&include_str!("./shader-vert.glsl")]);
-    gl.shader_source(frag, &[&include_str!("./shader-frag.glsl")]);
+    gl.shader_source(vert, &[&include_str!("./shader.vert")]);
+    gl.shader_source(frag, &[&include_str!("./shader.frag")]);
 
     gl.compile_shader(vert).unwrap();
     gl.compile_shader(frag).unwrap();

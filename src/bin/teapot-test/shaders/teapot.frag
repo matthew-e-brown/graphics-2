@@ -52,9 +52,10 @@ vec4 bpShading(Material material, Light light) {
 
 
 void main() {
+    fColor = vec4(0.0);
+
     for (int i = 0; i < numLights && i < MAX_LIGHTS; i++) {
         fColor += bpShading(material, lights[i]);
     }
-
     fColor.a = 1.0;
 }

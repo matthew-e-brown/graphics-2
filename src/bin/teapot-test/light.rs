@@ -155,8 +155,8 @@ impl<'gl> Light<'gl> {
             buf
         };
 
-        const VERT_SRC: &str = include_str!("./shaders/vert.glsl");
-        const FRAG_SRC: &str = include_str!("./shaders/frag-light.glsl");
+        const VERT_SRC: &str = include_str!("./shaders/main.vert");
+        const FRAG_SRC: &str = include_str!("./shaders/light.frag");
         let program = super::setup_program(gl, VERT_SRC, FRAG_SRC);
 
         let u_color = gl.get_uniform_location(program, "uColor").unwrap();

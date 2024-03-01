@@ -126,7 +126,7 @@ fn main() {
 
     gl.clear_color(0.15, 0.15, 0.15, 1.0);
     gl.enable(EnableCap::DepthTest);
-    gl.enable(EnableCap::Multisample);
+    // gl.enable(EnableCap::Multisample);
     gl.enable(EnableCap::DebugOutput);
     gl.enable(EnableCap::CullFace);
 
@@ -275,10 +275,10 @@ fn setup_window() -> (Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext) {
     glfw.window_hint(WindowHint::FocusOnShow(true));
     glfw.window_hint(WindowHint::Focused(true));
 
-    glfw.window_hint(WindowHint::Samples(Some(4)));
+    // glfw.window_hint(WindowHint::Samples(Some(4)));
 
     let (mut window, events) = glfw
-        .create_window(512, 512, "Graphics II - Teapot Test", WindowMode::Windowed)
+        .create_window(1200, 900, "Graphics II - Teapot Test", WindowMode::Windowed)
         .expect("Could not create the window.");
 
     let mut gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();

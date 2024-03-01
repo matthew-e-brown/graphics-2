@@ -98,8 +98,8 @@ fn compile_and_link_program(gl: &GLContext) -> Result<ProgramID, String> {
     let frag_shader = gl.create_shader(ShaderType::Fragment);
 
     // Just include the entire source-code of the shaders in the binary, for now
-    gl.shader_source(vert_shader, &[include_str!("./shader-vert.glsl")]);
-    gl.shader_source(frag_shader, &[include_str!("./shader-frag.glsl")]);
+    gl.shader_source(vert_shader, &[include_str!("./shader.vert")]);
+    gl.shader_source(frag_shader, &[include_str!("./shader.frag")]);
 
     gl.compile_shader(vert_shader)?;
     gl.compile_shader(frag_shader)?;

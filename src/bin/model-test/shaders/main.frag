@@ -1,6 +1,10 @@
 #version 460 core
 
-#define MAX_LIGHTS 8
+#define MAX_LIGHTS 16
+
+in vec3 vPosition;
+in vec3 vNormal;
+in vec2 vTexCoord;
 
 struct Material {
     vec3 diffuse;
@@ -21,14 +25,10 @@ uniform Material uMaterial;
 uniform Light uLights[MAX_LIGHTS];
 uniform int uNumLights = 0;
 
-in vec3 vPosition;
-in vec3 vNormal;
-in vec2 vTexCoord;
-
 out vec4 fColor;
 
 
-vec3 blinnPhong(Material material, Light light) {
+vec4 blinnPhong(Material material, Light light) {
     vec3 L = normalize(light.position - vPosition);
     vec3 E = normalize(-vPosition); // in camera space, eye is at the origin
     vec3 H = normalize(L + E);
@@ -49,15 +49,15 @@ vec3 blinnPhong(Material material, Light light) {
         spec = vec3(0.0);
     }
 
-    return aProd + diff + spec;
+    return vec4(aProd + diff + spec, 1.0);
 }
 
 
 void main() {
-    fColor.xyz = vec3(0.0);
+    fColor = vec4(0.0);
 
     for (int i = 0; i < uNumLights && i < MAX_LIGHTS; i++) {
-        fColor.xyz += blinnPhong(uMaterial, uLights[i]);
+        fColor += blinnPhong(uMaterial, uLights[i]);
     }
 
     fColor.a = 1.0;

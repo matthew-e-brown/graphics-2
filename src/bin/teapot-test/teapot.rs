@@ -141,8 +141,8 @@ impl<'gl> Teapot<'gl> {
     }
 
     fn init(gl: &'gl GLContext) -> StaticTeapotInfo {
-        const VERT_SRC: &str = include_str!("./shaders/vert.glsl");
-        const FRAG_SRC: &str = include_str!("./shaders/frag-teapot.glsl");
+        const VERT_SRC: &str = include_str!("./shaders/main.vert");
+        const FRAG_SRC: &str = include_str!("./shaders/teapot.frag");
         let program = super::setup_program(gl, VERT_SRC, FRAG_SRC);
 
         let u_num_lights = gl.get_uniform_location(program, "numLights").unwrap();
