@@ -145,16 +145,16 @@ impl<'gl> Teapot<'gl> {
         const FRAG_SRC: &str = include_str!("./shaders/teapot.frag");
         let program = super::setup_program(gl, VERT_SRC, FRAG_SRC);
 
-        let u_num_lights = gl.get_uniform_location(program, "numLights").unwrap();
+        let u_num_lights = gl.get_uniform_location(program, "numLights").unwrap_or_default();
 
-        let u_model_view_matrix = gl.get_uniform_location(program, "uModelViewMatrix").unwrap();
-        let u_projection_matrix = gl.get_uniform_location(program, "uProjectionMatrix").unwrap();
-        let u_normal_matrix = gl.get_uniform_location(program, "uNormalMatrix").unwrap();
+        let u_model_view_matrix = gl.get_uniform_location(program, "uModelViewMatrix").unwrap_or_default();
+        let u_projection_matrix = gl.get_uniform_location(program, "uProjectionMatrix").unwrap_or_default();
+        let u_normal_matrix = gl.get_uniform_location(program, "uNormalMatrix").unwrap_or_default();
 
-        let u_diffuse = gl.get_uniform_location(program, "material.diffuse").unwrap();
-        let u_ambient = gl.get_uniform_location(program, "material.ambient").unwrap();
-        let u_specular = gl.get_uniform_location(program, "material.specular").unwrap();
-        let u_shininess = gl.get_uniform_location(program, "material.shininess").unwrap();
+        let u_diffuse = gl.get_uniform_location(program, "material.diffuse").unwrap_or_default();
+        let u_ambient = gl.get_uniform_location(program, "material.ambient").unwrap_or_default();
+        let u_specular = gl.get_uniform_location(program, "material.specular").unwrap_or_default();
+        let u_shininess = gl.get_uniform_location(program, "material.shininess").unwrap_or_default();
 
         StaticTeapotInfo {
             program,
@@ -204,7 +204,7 @@ impl<'gl> Teapot<'gl> {
     pub fn pre_draw(gl: &GLContext, view_matrix: &Mat4, lights: &[Light]) {
         let info = STATIC_INFO.get().unwrap();
         gl.use_program(info.program);
-        gl.uniform_1i(info.u_num_lights, lights.len() as i32);
+        gl.uniform(info.u_num_lights, &(lights.len() as i32));
         for light in lights {
             light.set_uniforms(view_matrix);
         }
@@ -226,14 +226,14 @@ impl<'gl> Teapot<'gl> {
             n[[2,0]], n[[2,1]], n[[2,2]],
         );
 
-        gl.uniform_matrix_4fv(info.u_model_view_matrix, false, &[mv_matrix.into()]);
-        gl.uniform_matrix_3fv(info.u_normal_matrix, false, &[norm_matrix.into()]);
-        gl.uniform_matrix_4fv(info.u_projection_matrix, false, &[(*proj_matrix).into()]);
+        gl.uniform(info.u_model_view_matrix, &mv_matrix);
+        gl.uniform(info.u_normal_matrix, &norm_matrix);
+        gl.uniform(info.u_projection_matrix, proj_matrix);
 
-        gl.uniform_4fv(info.u_diffuse, &[self.diffuse.into()]);
-        gl.uniform_4fv(info.u_ambient, &[self.ambient.into()]);
-        gl.uniform_4fv(info.u_specular, &[self.specular.into()]);
-        gl.uniform_1f(info.u_shininess, self.shininess);
+        gl.uniform(info.u_diffuse, &self.diffuse);
+        gl.uniform(info.u_ambient, &self.ambient);
+        gl.uniform(info.u_specular, &self.specular);
+        gl.uniform(info.u_shininess, &self.shininess);
 
         gl.draw_arrays(DrawMode::Triangles, 0, self.vertex_count);
     }

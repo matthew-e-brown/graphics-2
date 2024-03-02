@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::sync::mpsc::Receiver;
 
 use glfw::{Action, Context, Glfw, Key, OpenGlProfileHint, SwapInterval, Window, WindowEvent, WindowHint, WindowMode};
-use gloog_core::types::{ClearMask, EnableCap, ProgramID, ShaderType, StringName};
+use gloog_core::types::{ClearMask, DebugFilter, DebugSource, DebugType, EnableCap, ProgramID, ShaderType, StringName};
 use gloog_core::{GLContext, InitFailureMode};
 use gloog_math::{Mat4, Vec3, Vec4};
 use light::Light;
@@ -126,7 +126,7 @@ fn main() {
 
     gl.clear_color(0.15, 0.15, 0.15, 1.0);
     gl.enable(EnableCap::DepthTest);
-    // gl.enable(EnableCap::Multisample);
+    gl.enable(EnableCap::Multisample);
     gl.enable(EnableCap::DebugOutput);
     gl.enable(EnableCap::CullFace);
 
@@ -275,7 +275,7 @@ fn setup_window() -> (Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext) {
     glfw.window_hint(WindowHint::FocusOnShow(true));
     glfw.window_hint(WindowHint::Focused(true));
 
-    // glfw.window_hint(WindowHint::Samples(Some(4)));
+    glfw.window_hint(WindowHint::Samples(Some(4)));
 
     let (mut window, events) = glfw
         .create_window(1200, 900, "Graphics II - Teapot Test", WindowMode::Windowed)
@@ -283,10 +283,19 @@ fn setup_window() -> (Glfw, Window, Receiver<(f64, WindowEvent)>, GLContext) {
 
     let mut gl = GLContext::init(|s| window.get_proc_address(s), InitFailureMode::WarnAndContinue).unwrap();
 
+    // Disables "Buffer object X will use VIDEO memory as the source for buffer object operations" notification
+    gl.debug_message_control(
+        DebugFilter::ById {
+            source: DebugSource::API,
+            typ: DebugType::Other,
+            ids: &[131185],
+        },
+        false,
+    );
+
     gl.debug_message_callback(move |message| {
         let lvl = message.severity.log_level();
-        let str = message.body;
-        log!(lvl, "{str}");
+        log!(lvl, "OpenGL debug message: {:#?}", message);
     });
 
     glfw.set_swap_interval(SwapInterval::Sync(1));

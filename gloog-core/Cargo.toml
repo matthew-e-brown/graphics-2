@@ -8,6 +8,7 @@ edition = "2021"
 build = "./build/main.rs"
 
 [dependencies]
+gloog-math = { path = "../gloog-math", version = "*" }
 log = "0.4.20"
 
 [build-dependencies]

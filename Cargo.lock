@@ -289,6 +289,7 @@ version = "0.1.0"
 dependencies = [
  "convert_case",
  "gl_generator",
+ "gloog-math",
  "indoc",
  "lazy_static",
  "log",

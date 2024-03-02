@@ -116,9 +116,9 @@ pub fn main() {
         {
             gl.clear(ClearMask::COLOR | ClearMask::DEPTH);
 
-            gl.uniform_matrix_4fv(u_model, false, &[*cube.model_matrix().as_2d_array()]);
-            gl.uniform_matrix_4fv(u_view, false, &[*view_matrix.as_2d_array()]);
-            gl.uniform_matrix_4fv(u_proj, false, &[*proj_matrix.as_2d_array()]);
+            gl.uniform(u_model, &cube.model_matrix());
+            gl.uniform(u_view, &view_matrix);
+            gl.uniform(u_proj, &proj_matrix);
 
             gl.draw_arrays(DrawMode::Triangles, 0, 36);
         }

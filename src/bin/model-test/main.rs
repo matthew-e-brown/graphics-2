@@ -70,8 +70,8 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
     let view_matrix = look_at(&Vec3::new(0.0, 0.5, 2.0), &Vec3::new(0.0, 0.5, 0.0));
     let proj_matrix = perspective(60.0, 1.00, 0.25, 50.0);
 
-    gl.uniform_matrix_4fv(uniforms.matrix.proj, false, &[proj_matrix.into()]);
-    gl.uniform_matrix_4fv(uniforms.matrix.view, false, &[view_matrix.into()]);
+    gl.uniform(uniforms.matrix.proj, &proj_matrix);
+    gl.uniform(uniforms.matrix.view, &view_matrix);
 
     let lights = vec![
         Light::white(Vec3::new(0.0, 3.0, 2.0)),
@@ -83,17 +83,18 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
         gl.clear(ClearMask::COLOR | ClearMask::DEPTH);
 
         // Send light uniforms
-        gl.uniform_1i(uniforms.num_lights, lights.len() as i32);
+        gl.uniform(uniforms.num_lights, &(lights.len() as i32));
+
         for (i, light) in lights.iter().enumerate() {
-            gl.uniform_3fv(uniforms.lights[i].diffuse, &[light.diffuse.into()]);
-            gl.uniform_3fv(uniforms.lights[i].ambient, &[light.ambient.into()]);
-            gl.uniform_3fv(uniforms.lights[i].specular, &[light.specular.into()]);
+            gl.uniform(uniforms.lights[i].diffuse, &light.diffuse);
+            gl.uniform(uniforms.lights[i].ambient, &light.ambient);
+            gl.uniform(uniforms.lights[i].specular, &light.specular);
 
             let lp4_ws = Vec4::from3(light.position, 1.0);
             let lp4_vs = view_matrix * lp4_ws;
             let lp3_vs = Vec3::new(lp4_vs[0], lp4_vs[1], lp4_vs[2]);
 
-            gl.uniform_3fv(uniforms.lights[i].position, &[lp3_vs.into()]);
+            gl.uniform(uniforms.lights[i].position, &lp3_vs);
         }
 
         model.draw(&view_matrix, &uniforms);
@@ -226,8 +227,8 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
             normal_matrix[[2,0]], normal_matrix[[2,1]], normal_matrix[[2,2]],
         );
 
-        gl.uniform_matrix_4fv(uniforms.matrix.model, false, &[model_matrix.into()]);
-        gl.uniform_matrix_3fv(uniforms.matrix.normal, false, &[norm_matrix.into()]);
+        gl.uniform(uniforms.matrix.model, &model_matrix);
+        gl.uniform(uniforms.matrix.normal, &norm_matrix);
 
         gl.bind_vertex_array(vao);
 
@@ -242,11 +243,11 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
             let spec_pow = group.material.spec_pow.unwrap_or(30.0);
             let alpha = group.material.alpha.unwrap_or(1.0);
 
-            gl.uniform_3fv(uniforms.material.diffuse, &[diffuse.into()]);
-            gl.uniform_3fv(uniforms.material.ambient, &[ambient.into()]);
-            gl.uniform_3fv(uniforms.material.specular, &[specular.into()]);
-            gl.uniform_1f(uniforms.material.spec_pow, spec_pow);
-            gl.uniform_1f(uniforms.material.alpha, alpha);
+            gl.uniform(uniforms.material.diffuse, &diffuse);
+            gl.uniform(uniforms.material.ambient, &ambient);
+            gl.uniform(uniforms.material.specular, &specular);
+            gl.uniform(uniforms.material.spec_pow, &spec_pow);
+            gl.uniform(uniforms.material.alpha, &alpha);
 
             let offset = group.indices().start * 4; // !! DrawElements wants a ptr offset not an index offset !!
             let count = group.indices().count();
@@ -453,42 +454,30 @@ impl AllUniforms {
     pub fn get(gl: &GLContext, program: ProgramID) -> Self {
         Self {
             matrix: MatrixUniforms {
-                proj: gl.get_uniform_location(program, "uProjMatrix").unwrap_or(UniformLocation(-1)),
-                view: gl.get_uniform_location(program, "uViewMatrix").unwrap_or(UniformLocation(-1)),
-                model: gl.get_uniform_location(program, "uModelMatrix").unwrap_or(UniformLocation(-1)),
-                normal: gl.get_uniform_location(program, "uNormMatrix").unwrap_or(UniformLocation(-1)),
+                proj: gl.get_uniform_location(program, "uProjMatrix").unwrap_or_default(),
+                view: gl.get_uniform_location(program, "uViewMatrix").unwrap_or_default(),
+                model: gl.get_uniform_location(program, "uModelMatrix").unwrap_or_default(),
+                normal: gl.get_uniform_location(program, "uNormMatrix").unwrap_or_default(),
             },
             material: MaterialUniforms {
-                diffuse: gl
-                    .get_uniform_location(program, "uMaterial.diffuse")
-                    .unwrap_or(UniformLocation(-1)),
-                ambient: gl
-                    .get_uniform_location(program, "uMaterial.ambient")
-                    .unwrap_or(UniformLocation(-1)),
-                specular: gl
-                    .get_uniform_location(program, "uMaterial.specular")
-                    .unwrap_or(UniformLocation(-1)),
-                spec_pow: gl
-                    .get_uniform_location(program, "uMaterial.specPow")
-                    .unwrap_or(UniformLocation(-1)),
-                alpha: gl
-                    .get_uniform_location(program, "uMaterial.alpha")
-                    .unwrap_or(UniformLocation(-1)),
+                diffuse: gl.get_uniform_location(program, "uMaterial.diffuse").unwrap_or_default(),
+                ambient: gl.get_uniform_location(program, "uMaterial.ambient").unwrap_or_default(),
+                specular: gl.get_uniform_location(program, "uMaterial.specular").unwrap_or_default(),
+                spec_pow: gl.get_uniform_location(program, "uMaterial.specPow").unwrap_or_default(),
+                alpha: gl.get_uniform_location(program, "uMaterial.alpha").unwrap_or_default(),
             },
-            num_lights: gl.get_uniform_location(program, "uNumLights").unwrap_or(UniformLocation(-1)),
-            lights: std::array::from_fn(|i| LightUniforms {
-                position: gl
-                    .get_uniform_location(program, &format!("uLights[{i}].position"))
-                    .unwrap_or(UniformLocation(-1)),
-                diffuse: gl
-                    .get_uniform_location(program, &format!("uLights[{i}].diffuse"))
-                    .unwrap_or(UniformLocation(-1)),
-                ambient: gl
-                    .get_uniform_location(program, &format!("uLights[{i}].ambient"))
-                    .unwrap_or(UniformLocation(-1)),
-                specular: gl
-                    .get_uniform_location(program, &format!("uLights[{i}].specular"))
-                    .unwrap_or(UniformLocation(-1)),
+            num_lights: gl.get_uniform_location(program, "uNumLights").unwrap_or_default(),
+            lights: std::array::from_fn(|i| {
+                let u_pos = format!("uLights[{i}].position");
+                let u_amb = format!("uLights[{i}].ambient");
+                let u_diff = format!("uLights[{i}].diffuse");
+                let u_spec = format!("uLights[{i}].specular");
+                LightUniforms {
+                    position: gl.get_uniform_location(program, &u_pos).unwrap_or_default(),
+                    diffuse: gl.get_uniform_location(program, &u_amb).unwrap_or_default(),
+                    ambient: gl.get_uniform_location(program, &u_diff).unwrap_or_default(),
+                    specular: gl.get_uniform_location(program, &u_spec).unwrap_or_default(),
+                }
             }),
         }
     }

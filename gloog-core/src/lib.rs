@@ -17,7 +17,8 @@ pub struct GLContext {
     /// Collection of loaded OpenGL function pointers.
     gl: GLPointers,
 
-    /// The current OpenGL debug callback.
+    /// The current OpenGL debug callback. Closures stored here need to be [`Sync`] because OpenGL may execute them from
+    /// another thread when doing logging. Methods in this crate are **guaranteed** not to call this function.
     debug_callback: Option<Box<dyn FnMut(DebugMessage) + Sync + 'static>>,
 }
 

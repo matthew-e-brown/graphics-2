@@ -11,7 +11,7 @@ gl_newtype!(pub struct ShaderID(GLuint));
 gl_newtype!(pub struct ProgramID(GLuint));
 gl_newtype!(pub struct VertexArrayID(GLuint));
 
-gl_newtype!(pub struct UniformLocation(pub GLint));
+gl_newtype!(pub struct UniformLocation(pub(crate) GLint));
 gl_newtype!(pub struct VertexAttribLocation(pub GLuint));
 
 
@@ -21,6 +21,13 @@ impl UniformLocation {
         self.0 != -1
     }
 }
+
+impl Default for UniformLocation {
+    fn default() -> Self {
+        UniformLocation(-1)
+    }
+}
+
 
 impl Into<VertexAttribLocation> for GLuint {
     fn into(self) -> VertexAttribLocation {

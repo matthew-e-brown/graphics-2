@@ -85,10 +85,10 @@ impl<'gl> Light<'gl> {
 
 
     fn get_uniforms(gl: &GLContext, id: usize, program: ProgramID) -> LightUniforms {
-        let diffuse = gl.get_uniform_location(program, &format!("lights[{id}].diffuse")).unwrap();
-        let ambient = gl.get_uniform_location(program, &format!("lights[{id}].ambient")).unwrap();
-        let specular = gl.get_uniform_location(program, &format!("lights[{id}].specular")).unwrap();
-        let position = gl.get_uniform_location(program, &format!("lights[{id}].position")).unwrap();
+        let diffuse = gl.get_uniform_location(program, &format!("lights[{id}].diffuse")).unwrap_or_default();
+        let ambient = gl.get_uniform_location(program, &format!("lights[{id}].ambient")).unwrap_or_default();
+        let specular = gl.get_uniform_location(program, &format!("lights[{id}].specular")).unwrap_or_default();
+        let position = gl.get_uniform_location(program, &format!("lights[{id}].position")).unwrap_or_default();
 
         LightUniforms {
             diffuse,
@@ -187,14 +187,14 @@ impl<'gl> Light<'gl> {
     pub fn set_uniforms(&self, view_matrix: &Mat4) {
         let &Self { gl, ref uniforms, .. } = self;
 
-        gl.uniform_4fv(uniforms.diffuse, &[self.diffuse.into()]);
-        gl.uniform_4fv(uniforms.ambient, &[self.ambient.into()]);
-        gl.uniform_4fv(uniforms.specular, &[self.specular.into()]);
+        gl.uniform(uniforms.diffuse, &self.diffuse);
+        gl.uniform(uniforms.ambient, &self.ambient);
+        gl.uniform(uniforms.specular, &self.specular);
 
         let position4 = Vec4::from3(self.position, 1.0);
         let vs_position = view_matrix * position4;
         let vs_position = Vec3::new(vs_position.x, vs_position.y, vs_position.z);
-        gl.uniform_3fv(uniforms.position, &[vs_position.into()]);
+        gl.uniform(uniforms.position, &vs_position);
     }
 
     pub fn draw(&self, view_matrix: &Mat4, proj_matrix: &Mat4) {
@@ -205,9 +205,9 @@ impl<'gl> Light<'gl> {
 
         let model_view = view_matrix * trans_matrix(self.position) * scale_matrix(Vec3::new(0.2, 0.2, 0.2));
 
-        gl.uniform_4fv(info.u_color, &[self.draw_color.into()]);
-        gl.uniform_matrix_4fv(info.u_model_view_matrix, false, &[model_view.into()]);
-        gl.uniform_matrix_4fv(info.u_projection_matrix, false, &[(*proj_matrix).into()]);
+        gl.uniform(info.u_color, &self.draw_color);
+        gl.uniform(info.u_model_view_matrix, &model_view);
+        gl.uniform(info.u_projection_matrix, proj_matrix);
 
         gl.draw_arrays(DrawMode::Triangles, 0, info.vertex_count);
     }
