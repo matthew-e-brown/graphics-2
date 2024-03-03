@@ -10,7 +10,7 @@ use gloog_core::types::{
     VertexAttribType,
 };
 use gloog_core::GLContext;
-use gloog_math::{Mat3, Mat4, Vec3, Vec4};
+use gloog_math::{Mat4, Vec3, Vec4};
 use rand::distributions::Uniform;
 use rand::Rng;
 
@@ -217,14 +217,7 @@ impl<'gl> Teapot<'gl> {
 
         let ctm = trans_matrix(self.position) * rotate_matrix(self.rotation) * scale_matrix(self.scale);
         let mv_matrix = view_matrix * ctm;
-
-        let n = mv_matrix.inverse().transpose();
-        #[rustfmt::skip]
-        let norm_matrix = Mat3::new(
-            n[[0,0]], n[[0,1]], n[[0,2]],
-            n[[1,0]], n[[1,1]], n[[1,2]],
-            n[[2,0]], n[[2,1]], n[[2,2]],
-        );
+        let norm_matrix = mv_matrix.inverse().transpose().to_mat3();
 
         gl.uniform(info.u_model_view_matrix, &mv_matrix);
         gl.uniform(info.u_normal_matrix, &norm_matrix);

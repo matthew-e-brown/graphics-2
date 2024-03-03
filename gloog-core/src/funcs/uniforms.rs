@@ -46,7 +46,7 @@ impl GLContext {
     ///
     /// ```
     /// # const program: ProgramID = ProgramID::new(0);
-    /// # fn perspective(_fov_deg: f32, _aspect: f32, _near_clip: f32, _far_clip: f32) {}
+    /// # fn perspective(_fov_deg: f32, _aspect: f32, _near_clip: f32, _far_clip: f32) -> Mat4 { Mat4::IDENTITY }
     ///
     /// fn draw_loop(gl: &GLContext) {
     ///     // --- snip ---
@@ -203,7 +203,7 @@ macro_rules! impl_uniform {
             type PtrType = GLfloat; // Only `fv` matrices
 
             fn get_ptr(&self) -> *const Self::PtrType {
-                self.as_ptr()
+                self.as_ptr().cast()
             }
 
             fn count(&self) -> GLsizei {
@@ -275,6 +275,10 @@ impl_uniform!(as_ptr, Vec4, uniform_4fv);
 impl_uniform!(matrix, Mat2, uniform_matrix_2fv);
 impl_uniform!(matrix, Mat3, uniform_matrix_3fv);
 impl_uniform!(matrix, Mat4, uniform_matrix_4fv);
+
+impl_uniform!(matrix, [[f32; 2]; 2], uniform_matrix_2fv);
+impl_uniform!(matrix, [[f32; 3]; 3], uniform_matrix_3fv);
+impl_uniform!(matrix, [[f32; 4]; 4], uniform_matrix_4fv);
 
 
 /// Because all uniforms make use of the `Uniform*v` functions, it can be safely implemented it for all slices by simply

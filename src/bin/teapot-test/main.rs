@@ -371,7 +371,7 @@ fn handle_input(delta_time: f32, keys: &KeyStatus, camera_pos: &mut Vec3, camera
             };
 
             let r_mat = axis_angle_matrix(spin_speed, axis);
-            let r_cam = r_mat * Vec4::from3(*camera_pos, 1.0);
+            let r_cam = r_mat * Vec4::from_vec3(*camera_pos, 1.0);
             *camera_pos = Vec3::new(r_cam.x, r_cam.y, r_cam.z);
         } else if let Key::Up | Key::Down = key {
             let mut zoom_speed = CAMERA_ZOOM_SPEED * delta_time;

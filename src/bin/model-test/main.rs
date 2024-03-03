@@ -21,7 +21,7 @@ use gloog_core::types::{
     VertexAttribType,
 };
 use gloog_core::{GLContext, InitFailureMode};
-use gloog_math::{Mat3, Mat4, Vec3, Vec4};
+use gloog_math::{Mat4, Vec3, Vec4};
 use log::{debug, info, log};
 
 
@@ -90,7 +90,7 @@ fn run(model_path: String) -> Result<(), Box<dyn Error>> {
             gl.uniform(uniforms.lights[i].ambient, &light.ambient);
             gl.uniform(uniforms.lights[i].specular, &light.specular);
 
-            let lp4_ws = Vec4::from3(light.position, 1.0);
+            let lp4_ws = Vec4::from_vec3(light.position, 1.0);
             let lp4_vs = view_matrix * lp4_ws;
             let lp3_vs = Vec3::new(lp4_vs[0], lp4_vs[1], lp4_vs[2]);
 
@@ -217,18 +217,10 @@ impl<'gl, 'a> Thingy<'gl, 'a> {
         let &Self { gl, model, vao, .. } = self;
 
         let model_matrix = model_matrix(&self.pos, &self.rot, &self.scl);
-        let normal_matrix = (view_matrix * model_matrix).inverse().transpose();
-
-        // TODO: actually write a method to trim a Mat4 down to a Mat3 (and Vec4->Vec3 too lol)
-        #[rustfmt::skip]
-        let norm_matrix = Mat3::new(
-            normal_matrix[[0,0]], normal_matrix[[0,1]], normal_matrix[[0,2]],
-            normal_matrix[[1,0]], normal_matrix[[1,1]], normal_matrix[[1,2]],
-            normal_matrix[[2,0]], normal_matrix[[2,1]], normal_matrix[[2,2]],
-        );
+        let normal_matrix = (view_matrix * model_matrix).inverse().transpose().to_mat3();
 
         gl.uniform(uniforms.matrix.model, &model_matrix);
-        gl.uniform(uniforms.matrix.normal, &norm_matrix);
+        gl.uniform(uniforms.matrix.normal, &normal_matrix);
 
         gl.bind_vertex_array(vao);
 

@@ -18,7 +18,7 @@ pub struct SceneObject {
     /// in, the _highest_ byte of the ID becomes the 4th float, alpha. Additionally, we subtract our values from 255 so
     /// they start at 1.0 and transition downwards, giving us brighter colours.
     ///
-    /// ```rust,ignore
+    /// ```text
     /// let id: u32 = 0xAA_RR_GG_BB;
     /// let id = Vec4 {
     ///     w: (255 - 0xAA) / 255,

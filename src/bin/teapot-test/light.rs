@@ -191,9 +191,8 @@ impl<'gl> Light<'gl> {
         gl.uniform(uniforms.ambient, &self.ambient);
         gl.uniform(uniforms.specular, &self.specular);
 
-        let position4 = Vec4::from3(self.position, 1.0);
-        let vs_position = view_matrix * position4;
-        let vs_position = Vec3::new(vs_position.x, vs_position.y, vs_position.z);
+        let position4 = self.position.to_vec4(1.0);
+        let vs_position = (view_matrix * position4).to_vec3();
         gl.uniform(uniforms.position, &vs_position);
     }
 

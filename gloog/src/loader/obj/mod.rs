@@ -5,9 +5,9 @@
 //!
 //! For future reference, here are some of the documents I used for the OBJ and MTL specs:
 //!
-//! - https://www.uhu.es/francisco.moreno/gii_rv/practicas/practica08/OBJ_SPEC.PDF
-//! - also: https://paulbourke.net/dataformats/obj/ (missing math section)
-//! - https://paulbourke.net/dataformats/mtl/
+//! - <https://www.uhu.es/francisco.moreno/gii_rv/practicas/practica08/OBJ_SPEC.PDF>
+//! - also: <https://paulbourke.net/dataformats/obj/> (missing math section)
+//! - <https://paulbourke.net/dataformats/mtl/>
 
 mod error;
 mod mtl;

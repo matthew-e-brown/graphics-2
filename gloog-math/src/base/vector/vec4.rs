@@ -27,12 +27,18 @@ impl Vec4 {
 
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new [`Vector4D`] out of a [`Vector3D`]'s `x`, `y`, and `z` components and a given `w` component.
+    /// Creates a new [`Vec4`] out of a [`Vec3`]'s `x`, `y`, and `z` components and a given `w` component.
     ///
-    /// See also: [`Vector3D::to4`].
+    /// See also: [`Vec3::to_vec4`].
     #[inline]
-    pub const fn from3(xyz: Vec3, w: f32) -> Vec4 {
+    pub const fn from_vec3(xyz: Vec3, w: f32) -> Vec4 {
         Vec4::new(xyz.x, xyz.y, xyz.z, w)
+    }
+
+    /// Creates a new [`Vec3`] by ignoring this vector's `w` component.
+    #[inline]
+    pub const fn to_vec3(&self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
     }
 }
 

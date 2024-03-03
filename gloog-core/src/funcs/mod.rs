@@ -1,8 +1,8 @@
-mod buffers;
-mod debug;
-mod shaders;
-mod uniforms;
-mod vertex;
+pub(crate) mod buffers;
+pub(crate) mod debug;
+pub(crate) mod shaders;
+pub(crate) mod uniforms;
+pub(crate) mod vertex;
 
 use std::ffi::CStr;
 

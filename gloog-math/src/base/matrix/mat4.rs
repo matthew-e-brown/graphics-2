@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 
-use crate::{Vec3, Vec4};
+use crate::{Mat3, Vec3, Vec4};
 
 
 /// A 4×4 matrix of 32-bit floats.
@@ -87,6 +87,17 @@ impl Mat4 {
             self[[0, 1]], self[[1, 1]], self[[2, 1]], self[[3, 1]],
             self[[0, 2]], self[[1, 2]], self[[2, 2]], self[[3, 2]],
             self[[0, 3]], self[[1, 3]], self[[2, 3]], self[[3, 3]],
+        )
+    }
+
+    /// Creates a [`Mat3`] by trimming out the last row and column of this matrix.
+    #[inline]
+    #[rustfmt::skip]
+    pub fn to_mat3(&self) -> Mat3 {
+        Mat3::new(
+            self[[0,0]], self[[0,1]], self[[0,2]],
+            self[[1,0]], self[[1,1]], self[[1,2]],
+            self[[2,0]], self[[2,1]], self[[2,2]],
         )
     }
 

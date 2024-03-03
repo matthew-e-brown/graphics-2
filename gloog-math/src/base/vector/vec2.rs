@@ -21,7 +21,7 @@ impl Vec2 {
     pub const UNIT_X: Vec2 = Vec2::new(1.0, 0.0);
     pub const UNIT_Y: Vec2 = Vec2::new(0.0, 1.0);
 
-    /// Creates a new [`Vector3D`] out of this vector's `x` and `y` components and a given `z` component.
+    /// Creates a new [`Vec3`] out of this vector's `x` and `y` components and a given `z` component.
     #[inline]
     pub const fn to3(&self, z: f32) -> Vec3 {
         Vec3::new(self.x, self.y, z)

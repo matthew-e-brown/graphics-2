@@ -132,7 +132,7 @@ pub mod types {
 }
 
 
-/// How [`GLPointers::init`] should behave when a function pointer cannot be loaded.
+/// How [`GLPointers::load`] should behave when a function pointer cannot be loaded.
 ///
 /// Be careful with using options other than `Abort`. They should be considered `unsafe`. See their documentation for
 /// more information.
@@ -144,7 +144,7 @@ pub enum InitFailureMode {
     /// As far as Rust safety guarantees go, **this is the only safe option.** All other options will result in
     /// `GLPointers` being partially uninitialized, which violates Rust's initialization invariant.
     Abort,
-    /// When a function pointer fails to load, a warning will [be logged][https://docs.rs/log] and initialization will
+    /// When a function pointer fails to load, a warning will [be logged](https://docs.rs/log) and initialization will
     /// continue. The function pointer will be left as [`null`][std::ptr::null] instead.
     ///
     /// **This option is unsafe.** If a pointer fails to load, [`GLPointers`] will be left partially uninitialized,

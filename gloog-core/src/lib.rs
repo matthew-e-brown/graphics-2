@@ -6,6 +6,7 @@ pub mod types;
 pub(crate) use crate::macros::*;
 use crate::raw::GLPointers;
 pub use crate::raw::InitFailureMode;
+pub use crate::funcs::uniforms::Uniform;
 use crate::types::DebugMessage;
 
 
