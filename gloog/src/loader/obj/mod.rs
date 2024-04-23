@@ -30,7 +30,7 @@ use log::{debug, info, log, trace};
 
 use self::error::{ObjLoadError, ObjResult};
 use crate::loader::obj::mtl::parse_mtl_file;
-use crate::loader::{lines_escaped, LineRange};
+use crate::loader::{lines_escaped, trim_line_comment, LineRange};
 
 
 // cspell:words curv interp stech ctech scrv cstype bmat newmtl usemtl mtllib maplib usemap
@@ -125,22 +125,11 @@ pub struct ObjVertex {
     tex_coord: Vec2,
 }
 
-macro_rules! vertex_offset {
-    ($field:ident) => {{
-        // We don't really need to care if the memory we're getting pointers to has been initialized properly, so we
-        // just allocate some zeroes.
-        let vert = unsafe { std::mem::MaybeUninit::<ObjVertex>::zeroed().assume_init() };
-        let base = std::ptr::addr_of!(vert) as *const u8;
-        let field = std::ptr::addr_of!(vert.$field) as *const u8;
-        unsafe { field.offset_from(base) as usize }
-    }};
-}
-
 impl ObjVertex {
     pub const STRIDE: isize = std::mem::size_of::<ObjVertex>() as isize;
-    pub const OFFSET_POSITION: usize = vertex_offset!(position);
-    pub const OFFSET_TEX_COORD: usize = vertex_offset!(tex_coord);
-    pub const OFFSET_NORMAL: usize = vertex_offset!(normal);
+    pub const OFFSET_POSITION: usize = std::mem::offset_of!(ObjVertex, position);
+    pub const OFFSET_TEX_COORD: usize = std::mem::offset_of!(ObjVertex, tex_coord);
+    pub const OFFSET_NORMAL: usize = std::mem::offset_of!(ObjVertex, normal);
 }
 
 /// Used to configure uniforms before executing draw call.
@@ -195,14 +184,6 @@ impl Debug for ObjMaterial {
 }
 
 
-/// Grab everything in a line up to the first `#` (and also trim the starts and ends).
-fn trim_comment(line: &str) -> &str {
-    match line.find('#') {
-        Some(i) => line[0..i].trim(),
-        None => line[0..].trim(),
-    }
-}
-
 impl ObjModel {
     pub fn from_file(
         path: impl AsRef<Path>,
@@ -239,7 +220,7 @@ impl ObjModel {
 
         for line_result in lines_escaped(file) {
             let (line_nums, line) = line_result?;
-            let line = trim_comment(&line);
+            let line = trim_line_comment(&line, "#");
 
             // If our line is empty after removing the comment, we can ignore it
             if line.len() == 0 {

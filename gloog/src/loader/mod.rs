@@ -26,38 +26,35 @@ fn lines_escaped<R: BufRead>(reader: R) -> impl Iterator<Item = io::Result<(Line
         let mut processed: Option<String> = None;
 
         let escaped_line = loop {
-            raw_line_num += 1; // Fine to increment first; line numbers start at 1.
+            raw_line_num += 1; // Fine to increment before grabbing from `raw_lines` iterator; line numbers start at 1.
 
             let raw_line = match raw_lines.next() {
+                // Next line in file is just regular text.
                 Some(Ok(text)) => text,
-                // If we hit an error, short-circuit this function. Can be caught by the consumer.
+                // Failed to read next line; throw the error up to the consumer.
                 Some(Err(err)) => return Some(Err(err)),
-                None => {
-                    // If the last line of the file has a backslash on it, we might run out of lines while we're
-                    // currently holding onto processed line(s). We
-                    match processed {
-                        Some(text) => break text,
-                        None => return None,
-                    };
-                },
+                // There are no more lines in the file. If `processed` is still Some, that means that the previous line
+                // ended with a backslash, and so we _should_ have found another line here. Otherwise, we can just
+                // return `None` and stop iteration.
+                None if processed.is_some() => return Some(Err(io::ErrorKind::UnexpectedEof.into())),
+                None => return None,
             };
 
-            // If we have any processed text currently pending, append this line. Otherwise, our new pending text is
-            // just the freshly read value on its own.
+            // If we have any processed text currently pending, append this line to it. Otherwise, our new pending text
+            // is just the freshly read value on its own.
             let mut pending = match processed {
                 Some(prev) => prev + &raw_line,
                 None => raw_line,
             };
 
-            // Then, check if the newly appended-to
+            // If our collection of lines still ends with a backslash, trim it off and keep looping.
             if pending.ends_with('\\') {
-                // If our escaped text still ends with a backslash, trim off that backslash and keep looping. We are
-                // safe to truncate by -1 because we now the last character is a plain ASCII backslash.
+                // Safe to truncate by 1 byte since we know the last character is a plain ASCII backslash
                 pending.truncate(pending.len() - 1);
                 processed = Some(pending);
                 num_escaped += 1;
             } else {
-                // Otherwise, what we've got is the current line.
+                // Otherwise, what we've got is the final line.
                 break pending;
             }
         };
@@ -67,6 +64,15 @@ fn lines_escaped<R: BufRead>(reader: R) -> impl Iterator<Item = io::Result<(Line
         let line_range = (raw_line_num - num_escaped)..(raw_line_num + 1);
         Some(Ok((line_range, escaped_line)))
     })
+}
+
+
+/// Grab everything in a line up to the first line-comment character(s). Also trims the start and end of the string.
+fn trim_line_comment<'a>(line: &'a str, comment: &str) -> &'a str {
+    match line.find(comment) {
+        Some(i) => line[0..i].trim(),
+        None => line[0..].trim(),
+    }
 }
 
 

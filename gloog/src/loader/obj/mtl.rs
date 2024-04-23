@@ -10,8 +10,8 @@ use image::ImageResult;
 use log::{debug, info, warn};
 
 use super::error::{MtlLoadError, MtlResult};
-use super::{read_ws_verts, trim_comment, CachedImage, ObjMaterial};
-use crate::loader::{lines_escaped, LineRange};
+use super::{read_ws_verts, CachedImage, ObjMaterial};
+use crate::loader::{lines_escaped, trim_line_comment, LineRange};
 
 // cspell:words newmtl usemtl
 
@@ -49,7 +49,7 @@ pub fn parse_mtl_file(
                 Err(err) => return Err(MtlLoadError::IOReadError(err)),
             };
 
-            let line = trim_comment(&line);
+            let line = trim_line_comment(&line, "#");
             if line.len() == 0 {
                 continue;
             }
