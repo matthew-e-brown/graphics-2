@@ -15,7 +15,7 @@ gl_enum! {
 
 
 gl_enum! {
-    /// Patterns for buffer data stores.
+    /// Usage patterns for buffer data stores.
     ///
     /// Each value can be broken down into two parts: the frequency of access and the nature of access. The frequency of
     /// access may be one of:
@@ -222,6 +222,10 @@ gl_enum! {
 
 
 gl_enum! {
+    /// Capabilities which may be enabled or disabled with [`glEnable`] and [`glDisable`].
+    ///
+    /// [`glEnable`]: crate::GLContext::enable
+    /// [`glDisable`]: crate::GLContext::disable
     pub enum EnableCap {
         /// If enabled, blend the computed fragment color values with the values in the color buffers. See
         /// `glBlendFunc`.
@@ -357,7 +361,19 @@ gl_enum! {
 
 
 gl_enum! {
-    pub enum PolygonModeFace {
+    pub enum FrontFaceDirection {
+        CW => CW,
+        CCW => CCW,
+    }
+}
+
+
+gl_enum! {
+    // This enum group is called `TriangleFace` in gl.xml; since it is used by `glPolygonMode` (and others, but none of
+    // them specify triangles vs. polygons), we call it `PolygonFace` instead.
+    pub enum PolygonFace {
+        Back => BACK,
+        Front => FRONT,
         FrontAndBack => FRONT_AND_BACK,
     }
 }
@@ -387,23 +403,6 @@ gl_enum! {
         Extensions => EXTENSIONS,
         ShadingLanguageVersion => SHADING_LANGUAGE_VERSION,
         SPIRVExtensions => SPIR_V_EXTENSIONS,
-    }
-}
-
-
-gl_enum! {
-    pub enum FrontFaceDirection {
-        CW => CW,
-        CCW => CCW,
-    }
-}
-
-
-gl_enum! {
-    pub enum TriangleFace {
-        Back => BACK,
-        Front => FRONT,
-        FrontAndBack => FRONT_AND_BACK,
     }
 }
 

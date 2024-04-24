@@ -89,20 +89,16 @@ pub fn write_struct_decl(registry: &Registry, dest: &mut impl Write) -> io::Resu
 pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     writeln!(dest, "impl {STRUCT_NAME} {{")?;
 
-    writedoc!(
-        dest,
-        r#"
-            /// Load all `OpenGL` function pointers using the given function to load function pointers.
-            ///
-            /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the
-            /// name of the function/symbol that failed to load. A function "fails to load" if the `loader_fn` does not
-            /// return a non-null pointer after attempting all fallbacks.
-        "#
-    )?;
-
     // Just cuz there's a lot of `{}` in here, it'd be annoying to use `writedoc` on them.
     let init_fn_str = indoc! {r#"
-        /// Loads all OpenGL function pointers. See [`InitFailureMode`] for more information.
+        /// Loads all `OpenGL` function pointers using the provided function to query for individual function pointers
+        /// one by one.
+        ///
+        /// In the event that loading a function pointer fails, this function returns `Err(&str)` containing the name of
+        /// the function/symbol that failed to load. A function pointer "fails to load" if `loader_fn` does not return a
+        /// non-null pointer after attempting all fallbacks.
+        ///
+        /// See the documentation of [`InitFailureMode`] for more details.
         pub unsafe fn load(
             mut loader_fn: impl FnMut(&'static str) -> *const c_void,
             failure_mode: InitFailureMode,
@@ -186,10 +182,11 @@ pub fn write_struct_ctor(registry: &Registry, dest: &mut impl Write) -> io::Resu
 pub fn write_struct_impl(registry: &Registry, dest: &mut impl Write) -> io::Result<()> {
     // Doesn't need any `write!` formatting
     let macro_str = indoc! {r#"
-        /// Casts (transmutes) a void pointer into a function pointer with the given arguments and
+        /// Casts (transmutes) a void pointer into a function pointer with the given signature so that it may be called.
         macro_rules! cast {
             ($self:ident.$name:ident($($p_ty:ty),*) -> $r_ty:ty) => {
-                // SAFETY: the functions doing this transmute are all unsafe; it's up to the caller to
+                // SAFETY: the functions calling this macro are all unsafe. Safety responsibilities are upheld by the
+                // caller.
                 ::core::mem::transmute::<VoidPtr, extern "system" fn($($p_ty),*) -> $r_ty>($self.$name)
             };
         }

@@ -6,13 +6,17 @@ pub use self::flags::*;
 use crate::macros::gl_newtype;
 use crate::raw::types::*;
 
-gl_newtype!(pub struct BufferID(GLuint));
-gl_newtype!(pub struct ShaderID(GLuint));
-gl_newtype!(pub struct ProgramID(GLuint));
-gl_newtype!(pub struct VertexArrayID(GLuint));
+// These newtypes use the full, spelled-out `crate::raw::types::X` path so that their generated function signatures are
+// consistent with the types created by `gl_enum!` and `gl_bitfield!`, which have no choice but to use the full,
+// un-aliased paths to `GLenum` and `GLbitfield`.
 
-gl_newtype!(pub struct UniformLocation(pub(crate) GLint));
-gl_newtype!(pub struct VertexAttribLocation(pub GLuint));
+gl_newtype!(pub struct BufferID(crate::raw::types::GLuint));
+gl_newtype!(pub struct ShaderID(crate::raw::types::GLuint));
+gl_newtype!(pub struct ProgramID(crate::raw::types::GLuint));
+gl_newtype!(pub struct VertexArrayID(crate::raw::types::GLuint));
+
+gl_newtype!(pub struct UniformLocation(crate::raw::types::GLint));
+gl_newtype!(pub struct VertexAttribLocation(crate::raw::types::GLuint));
 
 
 impl UniformLocation {

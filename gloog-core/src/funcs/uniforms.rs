@@ -30,14 +30,16 @@ impl GLContext {
         }
     }
 
+
     /// Just like [`get_uniform_location`][Self::get_uniform_location] except that it does not check for `-1` return
     /// values. This is completely safe, since OpenGL uniform functions are perfectly happy receiving a `-1` location
     /// for uniforms.
     pub fn get_uniform_location_unchecked(&self, program: ProgramID, name: &str) -> UniformLocation {
         let name = CString::new(name).expect("uniform name should not contain NUL-bytes");
         let loc = unsafe { self.gl.get_uniform_location(program.into_raw(), name.as_ptr()) };
-        UniformLocation::new(loc)
+        unsafe { UniformLocation::from_raw_unchecked(loc) }
     }
+
 
     /// Calls the appropriate [`glUniform*`] function for a value depending on how that value has implemented the
     /// [`Uniform`] trait.
@@ -45,7 +47,7 @@ impl GLContext {
     /// # Example
     ///
     /// ```
-    /// # const program: ProgramID = ProgramID::new(0);
+    /// # const program: ProgramID = unsafe { ProgramID::from_raw_unchecked(0) };
     /// # fn perspective(_fov_deg: f32, _aspect: f32, _near_clip: f32, _far_clip: f32) -> Mat4 { Mat4::IDENTITY }
     ///
     /// fn draw_loop(gl: &GLContext) {
@@ -74,27 +76,46 @@ impl GLContext {
 
 /// Represents a value that can be sent to OpenGL as a uniform.
 ///
+/// This trait is what powers the [`GLContext::uniform`] method. For the most part, you should neither need to implement
+/// this trait nor call any of its methods directly. This trait has already been implemented for all Rust primitive
+/// types that map to an OpenGL uniform type ([`f32`], [`i32`], [`u32`], and [`bool`]), as well as all of the basic
+/// [`gloog_math`] types.
 ///
-/// This trait is what powers the [`GLContext::uniform`] method; for the most part, you should neither need to implement
-/// it nor call any of its methods. It has already been implemented for all Rust primitive types that map to an OpenGL
-/// uniform type ([`f32`], [`i32`], [`u32`], and [`bool`]), as well as all of the basic [`gloog_math`] types.
+///
+/// # Arrays and slices
+///
+/// This trait is automatically implemented for any slice of values that implements `Uniform`. It may be worth noting
+/// how this implementation will map down to OpenGL function calls. We'll use floats as an example.
+///
+/// | Rust Type                                | OpenGL function call | `count` argument |
+/// | :--------------------------------------- | -------------------: | ---------------: |
+/// | A single `f32`                           |       `glUniform1fv` |                1 |
+/// | A slice `&[f32]` of length `n`           |       `glUniform1fv` |              `n` |
+/// | An array `[f32; 4]`                      |       `glUniform4fv` |                1 |
+/// | A 2D array `[[f32; 4]; 4]`               | `glUniformMatrix4fv` |                1 |
+/// | A slice `&[[f32; 4]]` of length `n`      |       `glUniform4fv` |              `n` |
+/// | A slice `&[[[f32; 4]; 4]]` of length `n` | `glUniformMatrix4fv` |              `n` |
+///
+/// The OpenGL spec states that the `fv` versions of the `glUniform*` command will set "a float, a floating-point
+/// vector, or an array of either of these types," so this implementation should work without issue; but it can't hurt
+/// to be aware of the inner workings.
+///
 ///
 /// # Implementing this trait
 ///
 /// Values that implement this trait need to ensure that the pointer returned by [`get_ptr`] is safe for OpenGL to read
-/// from. The _number_ of bytes that it should be safe to read from said pointer is determined by which
-/// [`GLPointer`][GLPointers] function is used within [`set_uniform`].
+/// from. The _number_ of bytes that should be safe to read is determined by which [`GLPointer`][GLPointers] function is
+/// used within [`set_uniform`].
 ///
-/// Generally, implementors of the `set_uniform` method should guarantee that they don't call any function other than
-/// one of the `glUniform` functions from [`GLPointers`]. The underlying function used should be able to support more
-/// than one value; that is, **it should be one of the `glUniform*v` variants.** This is because there exists a blanket
-/// implementation of this trait that covers any slices of uniforms, which rely on the assumption that `T::Uniform` is
-/// safe to sound for a `&[T]` (just with a different count).
+/// When implementing [`set_uniform`]:
 ///
-/// The reason that [`get_ptr`] and [`count`] are exposed as separate methods on this trait is so that
-/// [`GLContext::uniform`] can use them to determine which values to send to `set_uniform`.
+/// - You should not call any other [`GLPointers`] functions, just the `glUniform{1234}{idf ui}[v]` family of functions.
+/// - The function you do use **must** be able to support more than one value. That is, **it should be one of the `v`
+///   variants of `glUniform*`.** This is because there exists a blanket implementation of this trait that covers any
+///   slice of uniforms, which relies on the assumption that it is sound to call `T::set_uniform` with an arbitrarily
+///   sized buffer along with a different `count` parameter.
 ///
-/// The implementation of this trait is perhaps best given by an example.
+/// An implementation of this trait is perhaps best given by an example.
 ///
 /// ```
 /// // SAFETY: `gloog_math::Vec3` is `#[repr(C)]`, and so it is guaranteed to be equivalent to an array of three floats.
@@ -146,11 +167,17 @@ impl GLContext {
 /// [`count`]: Uniform::count
 /// [`set_uniform`]: Uniform::set_uniform
 pub unsafe trait Uniform {
-    /// What `GLtype` this value is; used to for pointer casting. For example, [`Vec3`] uses [`GLfloat`].
+    /// Which `GLtype` this value is; used for pointer casting.
+    ///
+    /// For example, a `vec3` uniform is would use `glUniform3fv`, and so the [`Vec3`] struct implements this trait with
+    /// a `PtrType` of [`GLfloat`] to go along with its call to [`GLPointers::uniform_3fv`].
     type PtrType;
 
     /// Converts a reference of this type into a pointer. The return value of this function is fed into
     /// [`set_uniform`][`Uniform::set_uniform`] by [`GLContext::uniform`].
+    ///
+    /// The default (just a call to [`std::ptr::from_ref`]) should suffice for most implementations. This function is
+    /// available to be overridden for any types that implement their own to-pointer functionality.
     fn get_ptr(&self) -> *const Self::PtrType {
         from_ref(self).cast()
     }
@@ -165,8 +192,7 @@ pub unsafe trait Uniform {
         1
     }
 
-    /// Wrapper for the raw [`GLPointers`] function that should be used to sends one or more uniforms of this type to
-    /// OpenGL.
+    /// Wrapper for the raw [`GLPointers`] function that sends one or more uniforms of this type to OpenGL.
     ///
     /// You should generally not call this method; use [`GLContext::uniform`] instead. That function guarantees that the
     /// value of `count` and `value` will always be the result of [`get_ptr()`] and [`count()`].
@@ -176,9 +202,11 @@ pub unsafe trait Uniform {
     unsafe fn set_uniform(gl: &GLPointers, location: GLint, count: GLsizei, value: *const Self::PtrType);
 }
 
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Implementations
 // ---------------------------------------------------------------------------------------------------------------------
+
 
 #[rustfmt::skip]
 macro_rules! uniform_type {
@@ -211,7 +239,7 @@ macro_rules! impl_uniform {
             }
 
             unsafe fn set_uniform(gl: &GLPointers, location: GLint, count: GLsizei, value: *const Self::PtrType) {
-                unsafe { gl.$func(location, count, false as GLboolean, value) } // false for transpose
+                unsafe { gl.$func(location, count, false as GLboolean, value) } // transpose = false
             }
         }
     };
@@ -225,7 +253,7 @@ macro_rules! impl_uniform {
             }
 
             fn count(&self) -> GLsizei {
-                1 // even for arrays; simply sending 1x of [f32; 4], for example
+                1 // count is 1 even for arrays (simply sending 1x of [f32; 4], for example)
             }
 
             unsafe fn set_uniform(gl: &GLPointers, location: GLint, count: GLsizei, value: *const Self::PtrType) {
@@ -281,8 +309,8 @@ impl_uniform!(matrix, [[f32; 3]; 3], uniform_matrix_3fv);
 impl_uniform!(matrix, [[f32; 4]; 4], uniform_matrix_4fv);
 
 
-/// Because all uniforms make use of the `Uniform*v` functions, it can be safely implemented it for all slices by simply
-/// casting the pointer to the slice.
+/// Because all uniforms (should) make use of the `Uniform*v` functions, it can be safely implemented it for all slices
+/// by simply casting the pointer to the slice.
 unsafe impl<T> Uniform for &[T]
 where
     T: Uniform,
@@ -290,7 +318,7 @@ where
     type PtrType = T::PtrType;
 
     fn get_ptr(&self) -> *const Self::PtrType {
-        <[T]>::as_ptr(self).cast() // cast slice ptr
+        <[T]>::as_ptr(self).cast() // reference to `[T]` -> `*const [T]` -> cast to `*const T::PtrType`
     }
 
     fn count(&self) -> GLsizei {

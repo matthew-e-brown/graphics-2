@@ -40,7 +40,7 @@ impl GLContext {
     /// For example, when using with GLFW:
     ///
     /// ```ignore
-    /// let gl = GLContext::init(|f| glfw.get_proc_address(f));
+    /// let gl = GLContext::init(|f| glfw.get_proc_address(f), InitFailureMode::Abort);
     /// ```
     ///
     /// This function returns `Err(&str)` in the event that loading a function fails. The returned string is the

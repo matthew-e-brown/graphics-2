@@ -8,16 +8,17 @@ use types::*;
 
 type VoidPtr = *const c_void;
 
-/// FFI-style type aliases to allow for nicer use of
+/// FFI-style type aliases that match with the types used by OpenGL, such as `GLint`, `GLboolean`, `GLenum`, and so on.
+///
+/// These types are defined in table 2.2 on page 13 of the 4.6 core specification. They are specifically _not_ C types,
+/// and have hard-coded sizes. Some underlying types have multiple aliases to provide a semantic distinction. For
+/// example, [`GLsizei`] and [`GLint`] are equivalent, but one is used to denote _sizes_ (of buffers, etc.), while the
+/// other is a simple integer.
 pub mod types {
     use super::c_char;
 
     // Standard type aliases
     // -----------------------------------------------------------------------------
-
-    // These types are defined in table 2.2 on page 13 of the 4.6 core specification. They are specifically *not* C
-    // types, but have hard-coded sizes. Don't forget that many also have different semantic meanings, despite mapping
-    // to the same underlying types.
 
     /// Boolean.
     pub type GLboolean = u8;
@@ -54,9 +55,11 @@ pub mod types {
     pub type GLuint64 = u64;
 
     /// Non-negative binary integer size.
+    ///
+    /// Since the OpenGL spec calls this (and some other types) "non-negative binary integer size," you would expect it
+    /// to be a u32; however, the raw `gl.xml` uses a plain `int` in its typedef instead of `unsigned int` or
+    /// `uint32_t`. We do the same for consistency.
     pub type GLsizei = i32;
-    // The OpenGL spec calls theses "non-negative binary integer sizes", so you would expect them to be be u32;
-    // however, gl.xml uses a plain `int` instead of `unsigned int` or `uint32_t`. We do the same for consistency.
 
     /// Enumerated binary integer value.
     pub type GLenum = u32;
@@ -88,7 +91,7 @@ pub mod types {
     /// Floating-point value clamped to [0, 1].
     pub type GLclampd = f64;
 
-    // Opaque types, used as pointees in some other type definitions.
+    // Opaque types, serve as pointees (things that are pointed to) in some other types.
     // -----------------------------------------------------------------------------
 
     /// Opaque type. Used as a pointee.
@@ -132,30 +135,62 @@ pub mod types {
 }
 
 
-/// How [`GLPointers::load`] should behave when a function pointer cannot be loaded.
+/// How [`GLPointers::load`] (and, by extension, [`GLContext::init`][crate::GLContext::init]) should behave when an
+/// OpenGL function pointer fails to load.
 ///
-/// Be careful with using options other than `Abort`. They should be considered `unsafe`. See their documentation for
+/// A function pointer "fails to load" if `loader_fn` does not return a non-null pointer after attempting all fallbacks.
+///
+/// # Safety
+///
+/// Options other than `Abort` are should be considered `unsafe`. See the documentation on the individual variants for
 /// more information.
 #[derive(Debug, Clone, Copy)]
 pub enum InitFailureMode {
-    /// Any single function pointer failing to load will cause [`GLPointers` initialization][GLPointers] to stop and
-    /// return an [`Err`].
+    /// If any one function pointer fails to load, initialization immediately returns an [`Err`].
     ///
-    /// As far as Rust safety guarantees go, **this is the only safe option.** All other options will result in
-    /// `GLPointers` being partially uninitialized, which violates Rust's initialization invariant.
+    /// As far as Rust safety guarantees go, **this is the only safe option.** All other options will result in a
+    /// [`GLPointers`] struct which contains some null pointers (though they are guaranteed to be null, as opposed to be
+    /// dangling), which violates Rust's initialization invariant.
     Abort,
-    /// When a function pointer fails to load, a warning will [be logged](https://docs.rs/log) and initialization will
-    /// continue. The function pointer will be left as [`null`][std::ptr::null] instead.
+
+    /// For any function pointers that fail to load, a warning is logged using [`log::warn`], and initialization
+    /// continues.
     ///
-    /// **This option is unsafe.** If a pointer fails to load, [`GLPointers`] will be left partially uninitialized,
-    /// which violates Rust's initialization invariant.
+    /// When using this mode, [`GLPointers::load`] and [`GLContext::init`][crate::GLContext::init] are guaranteed to
+    /// return [`Ok`].
+    ///
+    /// Any function pointer that fails to load is guaranteed to be left as [`null`][std::ptr::null] (as opposed to a
+    /// dangling pointer) in [`GLPointers`].
+    ///
+    /// # Safety
+    ///
+    /// **This option is unsafe.** If any function pointer fails to load, [`GLPointers`] will be left partially
+    /// uninitialized, violating Rust's initialization invariant.
+    ///
+    /// This mode is intended for use during development/debugging to avoid having to gracefully handle all edge-cases.
+    /// It should probably not be used in production code.
     WarnAndContinue,
-    /// When a function pointer fails to load, initialization will continue as if it did not. The function pointer will
-    /// be left as [`null`][std::ptr::null] instead.
+
+    /// When a function pointer fails to load, initialization continues as if nothing happened. The corresponding
+    /// function pointer in [`GLPointers`] will be left as [`null`][std::ptr::null] instead (as opposed to a dangling
+    /// pointer).
     ///
-    /// **This option is unsafe.** If a pointer fails to load, [`GLPointers`] will be left partially uninitialized,
-    /// which violates Rust's initialization invariant.
+    /// # Safety
+    ///
+    /// **This option is unsafe.** If any function pointer fails to load, [`GLPointers`] will be left partially
+    /// uninitialized, violating Rust's initialization invariant.
+    ///
+    /// This mode is probably unwise to use in production. Consider [`Abort`] and [`WarnAndContinue`] instead.
+    ///
+    /// [`Abort`]: InitFailureMode::Abort
+    /// [`WarnAndContinue`]: InitFailureMode::WarnAndContinue
     ContinueSilently,
+}
+
+impl Default for InitFailureMode {
+    fn default() -> Self {
+        Self::Abort
+    }
 }
 
 

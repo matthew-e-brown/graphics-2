@@ -7,7 +7,8 @@ use crate::{convert, GLContext};
 
 impl GLContext {
     pub fn create_shader(&self, shader_type: ShaderType) -> ShaderID {
-        ShaderID::new(unsafe { self.gl.create_shader(shader_type.into_raw()) })
+        let id = unsafe { self.gl.create_shader(shader_type.into_raw()) };
+        unsafe { ShaderID::from_raw_unchecked(id) }
     }
 
 
@@ -81,7 +82,8 @@ impl GLContext {
 
 
     pub fn create_program(&self) -> ProgramID {
-        ProgramID::new(unsafe { self.gl.create_program() })
+        let id = unsafe { self.gl.create_program() };
+        unsafe { ProgramID::from_raw_unchecked(id) }
     }
 
 
@@ -181,7 +183,7 @@ impl GLContext {
         let str_ptrs = str_ptrs.as_ptr().cast();
 
         let program = unsafe { self.gl.create_shader_program_v(shader_type.into_raw(), count, str_ptrs) };
-        let program = ProgramID::new(program);
+        let program = unsafe { ProgramID::from_raw_unchecked(program) };
 
         let success = unsafe {
             let mut status = 0;

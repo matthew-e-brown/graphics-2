@@ -7,8 +7,11 @@ use crate::{convert, GLContext};
 impl GLContext {
     pub fn create_vertex_array(&self) -> VertexArrayID {
         let mut name = 0;
-        unsafe { self.gl.create_vertex_arrays(1, &mut name) };
-        VertexArrayID::new(name)
+        unsafe {
+            self.gl.create_vertex_arrays(1, &mut name);
+        }
+
+        unsafe { VertexArrayID::from_raw_unchecked(name) }
     }
 
 
@@ -19,9 +22,18 @@ impl GLContext {
 
         let mut names = vec![0; n];
         let n = convert!(n, GLsizei, "number of vertex arrays");
+        unsafe {
+            self.gl.create_vertex_arrays(n, names.as_mut_ptr());
+        }
 
-        unsafe { self.gl.create_vertex_arrays(n, names.as_mut_ptr()) };
-        names.into_iter().map(VertexArrayID::new).collect()
+        // Theoretically this conversion of the entire vector could be done with a simple "cast," but this is the
+        // safe-Rust way to do this. Other possible approaches include decomposing the vector into raw parts, building a
+        // new one, and going from there---but discussions on that are still up in the air (see rust-lang/rust issue
+        // #65816). So I'll do this approach and cross my fingers that optimizer will quietly obliterate this call. :)
+        names
+            .into_iter()
+            .map(|name| unsafe { VertexArrayID::from_raw_unchecked(name) })
+            .collect()
     }
 
 

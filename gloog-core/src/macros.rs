@@ -49,23 +49,25 @@ macro_rules! convert {
 macro_rules! gl_newtype {
     (
         $(#[$attr:meta])*
-        $vis:vis struct $name:ident($inner_vis:vis $inner:ty)$(;)?
+        $vis:vis struct $name:ident($inner:ty)$(;)?
     ) => {
         $(#[$attr])*
         #[repr(transparent)]
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        $vis struct $name($inner_vis $inner);
+        // NB: `pub(crate)` is hardcoded because (a) we don't need public access due to `into_raw` and `from_raw`
+        // functions, and (b) without it, crate functions can't match on the inner values of generated types.
+        $vis struct $name(pub(crate) $inner);
 
         impl $name {
-            /// Wraps a raw value returned from an OpenGL binding.
-            #[allow(unused)]
-            pub(crate) const fn new(inner: $inner) -> Self {
-                Self(inner)
+            /// Wraps a raw value (usually called a "name" by OpenGL) as a newtype struct.
+            ///
+            /// Callers should be sure that the given value is currently a valid name.
+            pub const unsafe fn from_raw_unchecked(value: $inner) -> Self {
+                Self(value)
             }
 
-            /// Returns the raw value of this struct, to be passed to the raw OpenGL bindings.
-            #[allow(unused)]
-            pub(crate) const fn into_raw(self) -> $inner {
+            /// Returns the underlying value of this wrapper struct, for interop with raw OpenGL bindings.
+            pub const fn into_raw(self) -> $inner {
                 self.0
             }
         }
@@ -139,13 +141,15 @@ macro_rules! gl_enum {
         }
     ) => {
         $(#[$enum_attrs])*
-        #[repr(u32)]
+        #[repr(u32)] // NB: GLenum is hardcoded to be u32. GLenum is used elsewhere as a type name only for clarity.
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {
+            // Any literals come first;
             $(
                 $(#[$lit_attrs])*
                 $lit_name = $lit,
             )*
+            // Followed by actual OpenGL mappings.
             $(
                 $(#[$field_attrs])*
                 $field_name = crate::raw::$gl_name,
@@ -153,20 +157,34 @@ macro_rules! gl_enum {
         }
 
         impl $enum_name {
-            #[allow(unused)]
-            pub(crate) const fn into_raw(&self) -> u32 {
-                // SAFETY: enums are `repr(u32)`:
-                // https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
+            /// Returns the raw value of this enum as understood by OpenGL.
+            pub const fn into_raw(&self) -> crate::raw::types::GLenum {
+                // SAFETY: This enum is `repr(u32)`, which is what `GLenum` is.
                 unsafe { *(self as *const Self as *const u32) }
+
+                // NB: This is the recommended way to access enum discriminants for primitive-represented enums.
+                // https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
             }
 
-            #[allow(unused)]
-            pub(crate) const fn from_raw(value: u32) -> Option<Self> {
+            /// Converts the given value into an instance of this enum by matching on all possible values.
+            pub const fn from_raw(value: crate::raw::types::GLenum) -> Option<Self> {
                 match value{
                     $( $lit => Some(Self::$lit_name), )*
                     $( crate::raw::$gl_name => Some(Self::$field_name), )*
                     _ => None,
                 }
+            }
+
+            /// Converts the given value into an instance of this enum without checking if it matches a specific enum
+            /// variant first.
+            ///
+            /// Callers should be sure that the given value is in fact a valid OpenGL enum for the various functions
+            /// this Rust enum claims to map to. For example, just because en enum has `UnsignedByte` as a variant
+            /// doesn't mean that `GL_FLOAT` is valid; check which functions are associated to this enum before
+            /// performing a "cast" like this.
+            pub const unsafe fn from_raw_unchecked(value: crate::raw::types::GLenum) -> Self {
+                // SAFETY: This enum is `repr(u32)`, which is what `GLenum` is.
+                unsafe { *(&value as *const crate::raw::types::GLenum as *const Self) }
             }
         }
 
@@ -224,12 +242,16 @@ macro_rules! gl_bitfield {
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         $vis struct $struct_name(u32);
 
+        // The actual values of this bitfield; the associated constants.
         impl $struct_name {
             $(
                 $(#[$const_attrs])*
                 pub const $const_name: $struct_name = $struct_name(crate::raw::$gl_name);
             )*
+        }
 
+        // Function implementations.
+        impl $struct_name {
             /// Returns a set of all defined flags.
             pub const fn all() -> Self {
                 Self( $(Self::$const_name.0|)* 0 )
@@ -245,24 +267,36 @@ macro_rules! gl_bitfield {
                 // all of `other` is in `self` if masking `self` to only contain `other`'s bits gives us `other`.
                 (self.0 & other.0) == other.0
             }
-        }
 
-        impl $struct_name {
-            #[allow(unused)]
-            pub(crate) const fn into_raw(&self) -> u32 {
+            /// Returns the underlying value of this bitfield as understood by OpenGL.
+            pub const fn into_raw(&self) -> crate::raw::types::GLbitfield {
                 self.0
             }
 
-            #[allow(unused)]
-            pub(crate) const fn from_raw(value: u32) -> Option<Self> {
-                // Mask `value` to only include bytes from this bitfield
+            /// Converts a raw `GLbitfield` (a [`u32`]) into this bitfield struct.
+            ///
+            /// Returns `None` if the given value does not contain a valid set of bits for this particular bitfield.
+            pub const fn from_raw(value: crate::raw::types::GLbitfield) -> Option<Self> {
+                // Mask `value` to only include the bits that're in this bitfield
                 let masked = value & Self::all().into_raw();
-                // If we didn't lose any bits doing so, then this is a proper set of our bits
+                // If we didn't lose any bits doing so, then this is a valid set of bits for this type.
                 if masked == value {
                     Some(Self(value))
                 } else {
                     None
                 }
+            }
+
+            /// Converts a raw `GLbitfield` (a [`u32`]) into this bitfield struct without checking whether or not its
+            /// bits are valid first.
+            ///
+            /// Callers should ensure that creating this value will not result in sending any erroneous bitflags to
+            /// OpenGL function calls, since some commands are defined such that doing so is an error. For example, if a
+            /// function expects a bitfield with two flags, passing a third may be an error (i.e., if a command expects
+            /// `00`, `01`, `10`, or `11`, passing `100` may not interpreted as `00`, but may instead generate an
+            /// error).
+            pub const unsafe fn from_raw_unchecked(value: crate::raw::types::GLbitfield) -> Self {
+                Self(value)
             }
         }
 

@@ -6,8 +6,11 @@ use crate::{convert, GLContext};
 impl GLContext {
     pub fn create_buffer(&self) -> BufferID {
         let mut name = 0;
-        unsafe { self.gl.create_buffers(1, &mut name) };
-        BufferID::new(name)
+        unsafe {
+            self.gl.create_buffers(1, &mut name);
+        }
+
+        unsafe { BufferID::from_raw_unchecked(name) }
     }
 
 
@@ -18,9 +21,15 @@ impl GLContext {
 
         let mut names = vec![0; n];
         let n = convert!(n, GLsizei, "number of buffers");
+        unsafe {
+            self.gl.create_buffers(n, names.as_mut_ptr());
+        }
 
-        unsafe { self.gl.create_buffers(n, names.as_mut_ptr()) };
-        names.into_iter().map(BufferID::new).collect()
+        // See `create_vertex_arrays` for a note about this `iter -> map -> collect` process.
+        names
+            .into_iter()
+            .map(|name| unsafe { BufferID::from_raw_unchecked(name) })
+            .collect()
     }
 
 
