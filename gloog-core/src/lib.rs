@@ -1,13 +1,9 @@
-mod funcs;
 mod macros;
 pub mod raw;
-pub mod types;
 
-pub(crate) use crate::macros::*;
-use crate::raw::GLPointers;
-pub use crate::raw::InitFailureMode;
-pub use crate::funcs::uniforms::Uniform;
-use crate::types::DebugMessage;
+pub(crate) use macros::*;
+use raw::GLPointers;
+pub use raw::InitFailureMode;
 
 
 /// A wrapper for an underlying collection of OpenGL functions.
@@ -31,8 +27,7 @@ impl Drop for GLContext {
 }
 
 
-// Other implementations are in other files: see the `funcs` module.
-
+// Further implementation is spread out around the crate.
 impl GLContext {
     /// Initializes the context by loading all `OpenGL` function pointers using the given function to load function
     /// pointers.
@@ -57,30 +52,3 @@ impl GLContext {
         }
     }
 }
-
-
-// # Enabling Optimus Support
-//
-// Should be as simple as:
-// https://stackoverflow.com/a/39047129/
-// https://stackoverflow.com/a/68471374/
-//
-// But I couldn't get it to work. Requires exporting some symbols, and no amount of `no_mangle` would get Rust to
-// include them. Best I could find is using RUSTFLAGS='-C link-args=-export-dynamic', but that only works if the crate
-// is type="dylib". It also made it fail to run on Windows because it tries to link to std dynamically.
-//
-// Possible next step: maybe could make a C or C++ file with the export declarations in them and `extern` those with
-// Rust? Problem then is getting that C file to compile on Windows. Will need to add some stuff to the build script.
-//
-// Code from first attempt:
-
-// #[cfg(feature = "optimus")]
-// #[allow(non_upper_case_globals)]
-// #[no_mangle]
-// pub static NvOptimusEnablement: u32 = 1;
-
-// #[cfg(feature = "optimus")]
-// #[allow(non_upper_case_globals)]
-// #[no_mangle]
-// // cspell:disable-next-line 'Xpress'
-// pub static AmdPowerXpressRequestHighPerformance: i32 = 1;
