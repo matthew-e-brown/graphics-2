@@ -120,9 +120,34 @@ gl_enum! {
         Int => INT,
         UnsignedInt => UNSIGNED_INT,
 
-        SignedIntFourPack => INT_2_10_10_10_REV,
-        UnsignedIntFourPack => UNSIGNED_INT_2_10_10_10_REV,
-        FloatThreePack => UNSIGNED_INT_10F_11F_11F_REV,
+        /// Also known as `GL_INT_2_10_10_10_REV`. Represents a series of four values packed into a 32-bit unsigned
+        /// integer. Each packed value is itself a two's complement signed integer. The components have a bit-depth of
+        /// 2, 10, 10, and 10 bits, but in reverse order.
+        ///
+        /// ```text
+        /// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+        /// |  W |              Z              |              Y              |               X            |
+        /// -----------------------------------------------------------------------------------------------
+        /// ```
+        ///
+        /// If this is used as a vertex attribute type, the `size` of that attribute **must** be 4 (or `GL_BGRA`).
+        PackedSignedInts210Rev => INT_2_10_10_10_REV,
+
+        /// The same as [`PackedSignedInts210Rev`][VertexAttribType::PackedSignedInts210Rev], but with unsigned
+        /// integers.
+        PackedUnsignedInts210Rev => UNSIGNED_INT_2_10_10_10_REV,
+
+        /// A 3-element vector of floats packed into a 32-bit unsigned integer. The bit-depths for the three packed
+        /// values are 10, 11, and 11, but in reverse order.
+        ///
+        /// ```text
+        /// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
+        /// |             Z              |              Y                 |               X               |
+        /// -----------------------------------------------------------------------------------------------
+        /// ```
+        ///
+        /// If this is used as a vertex attribute type, the `size` of that attribute **must** be 3.
+        PackedFloats1011Rev => UNSIGNED_INT_10F_11F_11F_REV,
     }
 }
 
@@ -166,6 +191,17 @@ impl From<DoubleVertexAttribType> for VertexAttribType {
     }
 }
 
+// [TODO] TryFrom implementations that go the other way.
+
+gl_enum! {
+    pub enum VertexAttribSize {
+        (literal) One => 1,
+        (literal) Two => 2,
+        (literal) Three => 3,
+        (literal) Four => 4,
+        BGRA => BGRA,
+    }
+}
 
 gl_enum! {
     pub enum DrawMode {

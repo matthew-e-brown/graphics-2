@@ -55,13 +55,14 @@ impl GLContext {
         stride: isize,
         offset: usize,
     ) {
-        let index = index.into().0;
+        let index = index.into().into_raw();
         let stride = convert!(stride, GLsizei, "vertex attribute stride");
         let normalized = convert!(normalized, GLboolean, "'normalized' parameter");
 
         let offset = offset as *const _;
         let attrib = attrib_type.into_raw();
 
+        // [TODO] Switch to using VertexAttribSize parameter
         let size = match size {
             n @ 1..=4 => n as GLsizei,
             n if n == (crate::raw::BGRA as usize) => n as GLsizei,
@@ -69,6 +70,26 @@ impl GLContext {
         };
 
         unsafe { self.gl.vertex_attrib_pointer(index, size, attrib, normalized, stride, offset) }
+    }
+
+
+    pub fn vertex_attrib_format(
+        &self,
+        index: impl Into<VertexAttribLocation>,
+        size: VertexAttribSize,
+        attrib_type: VertexAttribType,
+        normalized: bool,
+        rel_offset: usize,
+    ) {
+        let index = index.into().into_raw();
+        let size = size
+            .into_raw()
+            .try_into()
+            .expect("the only valid values of VertexAttribSize are within i32 range");
+        let attrib = attrib_type.into_raw();
+        let normalized = convert!(normalized, GLboolean, "'normalized' parameter");
+        let rel_offset = convert!(rel_offset, GLuint, "vertex attribute relative offset");
+        unsafe { self.gl.vertex_attrib_format(index, size, attrib, normalized, rel_offset) }
     }
 
 

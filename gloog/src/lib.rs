@@ -1,4 +1,5 @@
 pub mod loader;
+pub mod model;
 
 use std::borrow::Cow;
 use std::fmt::Debug;

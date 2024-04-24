@@ -102,6 +102,11 @@ macro_rules! gl_newtype {
 /// }
 /// ```
 ///
+/// Additional hardcoded `u32` values can be specified by prefixing them with `(literal)`. `(literal)` must be used
+/// instead of `#[literal]` due to a limitation in how declarative macros handle ambiguities. Similarly, all literals
+/// must be at the start of the list. Additionally, `(literal)` must come before any other attributes (i.e.
+/// doc-comments).
+///
 /// [`Hash`]: std::hash::Hash
 /// [`Debug`]: std::fmt::Debug
 macro_rules! gl_enum {
@@ -123,6 +128,11 @@ macro_rules! gl_enum {
         $(#[$enum_attrs:meta])*
         $vis:vis enum $enum_name:ident {
             $(
+                (literal)
+                $(#[$lit_attrs:meta])*
+                $lit_name:ident => $lit:literal
+            ),*$(,)?
+            $(
                 $(#[$field_attrs:meta])*
                 $field_name:ident => $gl_name:ident
             ),*$(,)?
@@ -132,6 +142,10 @@ macro_rules! gl_enum {
         #[repr(u32)]
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {
+            $(
+                $(#[$lit_attrs])*
+                $lit_name = $lit,
+            )*
             $(
                 $(#[$field_attrs])*
                 $field_name = crate::raw::$gl_name,
@@ -149,6 +163,7 @@ macro_rules! gl_enum {
             #[allow(unused)]
             pub(crate) const fn from_raw(value: u32) -> Option<Self> {
                 match value{
+                    $( $lit => Some(Self::$lit_name), )*
                     $( crate::raw::$gl_name => Some(Self::$field_name), )*
                     _ => None,
                 }
@@ -158,7 +173,8 @@ macro_rules! gl_enum {
         impl std::fmt::Debug for $enum_name {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str(match self {
-                    $ ($enum_name::$field_name => stringify!($field_name), )*
+                    $($enum_name::$lit_name => stringify!($lit_name), )*
+                    $($enum_name::$field_name => stringify!($field_name), )*
                 })
             }
         }
