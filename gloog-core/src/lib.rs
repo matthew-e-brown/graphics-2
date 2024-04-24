@@ -1,6 +1,8 @@
+mod debug;
 mod macros;
 pub mod raw;
 
+use debug::DebugMessage;
 pub(crate) use macros::*;
 use raw::GLPointers;
 pub use raw::InitFailureMode;
