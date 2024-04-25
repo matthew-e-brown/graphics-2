@@ -3,6 +3,7 @@ mod macros;
 mod meta;
 pub mod raw;
 pub mod shader;
+pub mod uniform;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -12,6 +13,7 @@ pub(crate) use macros::*;
 pub use meta::*;
 use raw::GLPointers;
 pub use raw::InitFailureMode;
+use shader::Program;
 
 
 gl_bitfield! {
@@ -28,6 +30,21 @@ gl_bitfield! {
 ///
 /// According to the specification, function pointers loaded for OpenGL are not valid on threads other than the one that
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
+///
+/// # A small note on drop order
+///
+/// Due to how this struct is implemented, there's a small note worth mentioning about drop order.
+///
+/// Any OpenGL functions used after this context struct has been dropped will not have their debug messages logged,
+/// since `debug_callback` will vanish along with this struct. This type unsets the debug callback when it is dropped,
+/// so there is no issue with OpenGL calling a since-dropped function pointer, but that means any previously passed
+/// closures will stop working.
+///
+/// You should always drop this struct **after** any other structs you've created (e.g. [`Program`] objects, [`Shader`]
+/// objects, etc.).
+///
+/// [`Shader`]: shader::Shader
+/// [`Program`]: shader::Program
 pub struct GLContext {
     /// Collection of loaded OpenGL function pointers.
     gl: Rc<GLPointers>,
@@ -69,6 +86,19 @@ impl GLContext {
             gl: Rc::new(raw),
             debug_callback: Cell::new(None),
         })
+    }
+
+    /// Make a program the current program object.
+    ///
+    /// # Panics
+    ///
+    /// This method panics of `program` has not yet been linked.
+    pub fn use_program(&mut self, program: &Program) {
+        if !program.is_linked() {
+            panic!("attempted to 'use' a non-linked shader program object");
+        }
+
+        unsafe { self.gl.use_program(program.id) }
     }
 
     /// Sets the x, y, width, and height parameters of all viewports.

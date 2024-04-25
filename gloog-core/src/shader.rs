@@ -59,9 +59,9 @@ impl GLContext {
 /// They are cleaned up once detached from the program object (or once the program object is deleted).
 pub struct Shader {
     /// A pointer to loaded OpenGL functions.
-    gl: Rc<GLPointers>,
+    pub(crate) gl: Rc<GLPointers>,
     /// The "name" of this shader. OpenGL also calls this a name.
-    id: GLuint,
+    pub(crate) id: GLuint,
     /// The type of this shader.
     ty: ShaderType,
     /// Whether or not this shader is compiled.
@@ -195,9 +195,9 @@ impl Drop for Shader {
 /// until this program itself is deleted).
 pub struct Program {
     /// A pointer to loaded OpenGL functions.
-    gl: Rc<GLPointers>,
+    pub(crate) gl: Rc<GLPointers>,
     /// The "name" of this program object.
-    id: GLuint,
+    pub(crate) id: GLuint,
     /// Whether or not this program has been linked yet.
     is_linked: bool,
     /// Whether or not this program has had its attached shader objects modified since it was last linked.
@@ -210,6 +210,19 @@ impl Program {
     /// Gets this program object's ID. OpenGL also refers to this value as the object's "name".
     pub const fn id(&self) -> GLuint {
         self.id
+    }
+
+    /// Checks whether or not this shader program has been linked already.
+    pub const fn is_linked(&self) -> bool {
+        self.is_linked
+    }
+
+    /// Checks whether or not this shader program has had any extra shaders attached to it since it was last linked.
+    ///
+    /// This is a separate flag than `is_linked` because a shader program's linked state is not modified by subsequent
+    /// attaches/detaches.
+    pub const fn is_dirty(&self) -> bool {
+        self.is_dirty
     }
 
     /// Attach a [shader object][Shader] to this program object.
