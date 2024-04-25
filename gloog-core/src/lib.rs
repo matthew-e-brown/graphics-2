@@ -1,11 +1,27 @@
-mod debug;
+pub mod debug;
 mod macros;
+mod meta;
 pub mod raw;
+pub mod shader;
 
-use debug::DebugMessage;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use debug::DebugClosure;
 pub(crate) use macros::*;
+pub use meta::*;
 use raw::GLPointers;
 pub use raw::InitFailureMode;
+
+
+gl_bitfield! {
+    /// A bitmask indicating which buffers are to be cleared in [`GLContext::clear`].
+    pub struct ClearMask {
+        pub const COLOR = COLOR_BUFFER_BIT;
+        pub const DEPTH = DEPTH_BUFFER_BIT;
+        pub const STENCIL = STENCIL_BUFFER_BIT;
+    }
+}
 
 
 /// A wrapper for an underlying collection of OpenGL functions.
@@ -14,11 +30,11 @@ pub use raw::InitFailureMode;
 /// loaded them. As such, this type is not [`Send`] or [`Sync`].
 pub struct GLContext {
     /// Collection of loaded OpenGL function pointers.
-    gl: GLPointers,
+    gl: Rc<GLPointers>,
 
     /// The current OpenGL debug callback. Closures stored here need to be [`Sync`] because OpenGL may execute them from
     /// another thread when doing logging. Methods in this crate are **guaranteed** not to call this function.
-    debug_callback: Option<Box<dyn FnMut(DebugMessage) + Sync + 'static>>,
+    debug_callback: Cell<Option<DebugClosure>>,
 }
 
 impl Drop for GLContext {
@@ -30,6 +46,7 @@ impl Drop for GLContext {
 
 
 // Further implementation is spread out around the crate.
+
 impl GLContext {
     /// Initializes the context by loading all `OpenGL` function pointers using the given function to load function
     /// pointers.
@@ -47,10 +64,45 @@ impl GLContext {
         loader_fn: impl FnMut(&'static str) -> *const core::ffi::c_void,
         failure_mode: InitFailureMode,
     ) -> Result<Self, &'static str> {
-        let raw_ptrs = unsafe { GLPointers::load(loader_fn, failure_mode) };
-        match raw_ptrs {
-            Ok(gl) => Ok(Self { gl, debug_callback: None }),
-            Err(e) => Err(e),
-        }
+        let raw = unsafe { GLPointers::load(loader_fn, failure_mode) }?;
+        Ok(Self {
+            gl: Rc::new(raw),
+            debug_callback: Cell::new(None),
+        })
+    }
+
+    /// Sets the x, y, width, and height parameters of all viewports.
+    pub fn viewport(&mut self, x: i32, y: i32, width: i32, height: i32) {
+        unsafe { self.gl.viewport(x, y, width, height) }
+    }
+
+    /// Sets every pixel of the relevant buffers to their current clear values.
+    pub fn clear(&mut self, buffers: ClearMask) {
+        unsafe { self.gl.clear(buffers.into_raw()) }
+    }
+
+    /// Sets the clear value for fixed- and floating-point color buffers.
+    pub fn clear_color(&mut self, red: f32, green: f32, blue: f32, alpha: f32) {
+        unsafe { self.gl.clear_color(red, green, blue, alpha) }
+    }
+
+    /// Sets the depth value used when clearing the depth buffer.
+    ///
+    /// See also [`clear_depth_f`][Self::clear_depth_f].
+    pub fn clear_depth(&mut self, depth: f64) {
+        unsafe { self.gl.clear_depth(depth) }
+    }
+
+    /// Sets the depth value used when clearing the depth buffer.
+    ///
+    /// See also [`clear_depth`][Self::clear_depth].
+    pub fn clear_depth_f(&mut self, depth: f32) {
+        unsafe { self.gl.clear_depth_f(depth) }
+    }
+
+    /// Sets the value with which the stencil buffer is cleared with. `s` is masked to the number of bitplanes in the
+    /// stencil buffer.
+    pub fn clear_stencil(&mut self, s: i32) {
+        unsafe { self.gl.clear_stencil(s) }
     }
 }

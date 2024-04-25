@@ -1,14 +1,24 @@
 //! Defines debugging-related types and implements debugging functionality on [`GLContext`].
+//! Types and implementations related to debug message output.
 
 use std::ffi::c_void;
 use std::mem::align_of;
 use std::ops::DerefMut;
-use std::ptr;
-use std::slice;
+use std::{ptr, slice};
 
 use crate::raw::types::*;
 use crate::raw::{DONT_CARE as GL_DONT_CARE, MAX_DEBUG_MESSAGE_LENGTH as GL_MAX_DEBUG_MESSAGE_LENGTH};
 use crate::{convert, gl_enum, GLContext};
+
+
+/// A box-wrapped debug message callback.
+///
+/// Even though [`GLContext`] itself is neither [`Send`] nor [`Sync`], closures provided to
+/// [`debug_message_callback`][callback] must be `Sync`. This is because the OpenGL spec allows for a debug callback to
+/// be called from a different thread than the one that established the callback.
+///
+/// [callback]: GLContext::debug_message_callback
+pub type DebugClosure = Box<dyn FnMut(DebugMessage) + Sync + 'static>;
 
 
 gl_enum! {
@@ -278,9 +288,11 @@ impl GLContext {
     }
 
 
-    /// This function requires a mutable reference to the context because the callback closure, if it captures anything,
-    /// must be kept alive for as long as OpenGL may call the debug callback. If this function is called twice, the
-    /// callback from the first call is replaced and its closure is dropped.
+    /// Sets the given function as the OpenGL debug message callback.
+    ///
+    /// Note that debug outputs must be enabled with [`GLContext::enable`].
+    ///
+    /// If this function is called twice, the callback from the first call is replaced and its closure is dropped.
     ///
     /// Even though [`GLContext`] itself is neither [`Send`] nor [`Sync`], the provided closure must be `Sync`. This is
     /// because the OpenGL spec allows for a debug callback to be called from a different thread than the one that
@@ -352,7 +364,7 @@ impl GLContext {
         // Store the pointer to our now-on-the-heap closure. As long as this struct stays alive, the box will be valid
         // and the closure will not be dropped. NB: we don't need to use `Pin` or anything like that since this is a
         // private field; nobody else can ever try and funny business (i.e. moving the closure out of the box).
-        self.debug_callback = Some(callback);
+        self.debug_callback.set(Some(callback));
     }
 
 
@@ -360,12 +372,11 @@ impl GLContext {
     ///
     /// If the previous callback was an owning closure, it will be dropped after this function is called.
     pub fn unset_debug_message_callback(&mut self) {
-        unsafe {
-            self.gl.debug_message_callback(None, std::ptr::null());
+        let callback = self.debug_callback.take();
+        if callback.is_some() {
+            unsafe {
+                self.gl.debug_message_callback(None, std::ptr::null());
+            }
         }
-
-        // Ensure we only perform the drop once we actually do the FFI call that takes the pointer away from OpenGL.
-        // Otherwise, OpenGL may attempt to call into the function that no longer exists!
-        self.debug_callback = None;
     }
 }
