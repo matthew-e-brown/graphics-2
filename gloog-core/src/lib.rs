@@ -3,7 +3,6 @@ mod macros;
 mod meta;
 pub mod raw;
 pub mod shader;
-pub mod uniform;
 
 use std::cell::Cell;
 use std::rc::Rc;

@@ -1,8 +1,12 @@
-//! Types and implementations related to shader and shader program objects.
+//! Types and implementations related to shaders, and shader programs, and uniforms.
+
+mod uniform;
 
 use std::ffi::c_char;
 use std::rc::Rc;
 use std::{mem, ptr};
+
+pub use uniform::*;
 
 use crate::raw::types::*;
 use crate::raw::{GLPointers, COMPILE_STATUS, INFO_LOG_LENGTH, LINK_STATUS, TRUE as GL_TRUE};
