@@ -140,7 +140,7 @@ macro_rules! gl_enum {
     ) => {
         $(#[$enum_attrs])*
         #[repr(u32)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {}
     };
     // Main implementation
@@ -161,7 +161,7 @@ macro_rules! gl_enum {
     ) => {
         $(#[$enum_attrs])*
         #[repr(u32)] // NB: GLenum is hardcoded to be u32. GLenum is used elsewhere as a type name only for clarity.
-        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         $vis enum $enum_name {
             // Any literals come first;
             $(
@@ -179,10 +179,10 @@ macro_rules! gl_enum {
             /// Returns the raw value of this enum as understood by OpenGL.
             pub const fn into_raw(&self) -> crate::raw::types::GLenum {
                 // SAFETY: This enum is `repr(u32)`, which is what `GLenum` is.
-                unsafe { *(self as *const Self as *const u32) }
-
+                //
                 // NB: This is the recommended way to access enum discriminants for primitive-represented enums.
                 // https://doc.rust-lang.org/reference/items/enumerations.html#pointer-casting
+                unsafe { *(self as *const Self as *const u32) }
             }
 
             /// Converts the given value into an instance of this enum by matching on all possible values.
@@ -207,14 +207,15 @@ macro_rules! gl_enum {
             }
         }
 
-        impl std::fmt::Debug for $enum_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(match self {
-                    $($enum_name::$lit_name => stringify!($lit_name), )*
-                    $($enum_name::$field_name => stringify!($field_name), )*
-                })
-            }
-        }
+        // Not really sure what my original intent behind this impl was...
+        // impl std::fmt::Debug for $enum_name {
+        //     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        //         f.write_str(match self {
+        //             $($enum_name::$lit_name => stringify!($lit_name), )*
+        //             $($enum_name::$field_name => stringify!($field_name), )*
+        //         })
+        //     }
+        // }
     };
 }
 
