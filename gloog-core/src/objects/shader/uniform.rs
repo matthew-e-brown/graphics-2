@@ -4,10 +4,14 @@ use std::ptr::from_ref;
 
 use gloog_math::{Mat2, Mat3, Mat4, Vec2, Vec3, Vec4};
 
+use super::Program;
 use crate::raw::types::*;
 use crate::raw::GLPointers;
-use crate::shader::Program;
 use crate::{convert, gl_newtype};
+
+
+// [TODO] Maybe `UniformLocation` would make more sense as a simple type-alias to Option<GLint>? Functions could accept
+// that directly. Or maybe I could make it a trait with a blanket impl for `i32` and `Option<i32>`!
 
 
 gl_newtype! {
@@ -205,7 +209,13 @@ impl Program {
 ///         count: GLsizei,
 ///         value: *const Self::PtrType,
 ///     ) {
-///         gl.program_uniform_matrix_4fv(program, location, count, /* transpose: */ false as GLboolean, value)
+///         gl.program_uniform_matrix_4fv(
+///             program,
+///             location,
+///             count,
+///             /* transpose: */ false as GLboolean,
+///             value,
+///         )
 ///     }
 /// }
 /// ```

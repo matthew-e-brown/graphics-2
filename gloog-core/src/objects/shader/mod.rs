@@ -1,5 +1,3 @@
-//! Types and implementations related to shaders, and shader programs, and uniforms.
-
 mod uniform;
 
 use std::ffi::c_char;
@@ -30,7 +28,7 @@ impl GLContext {
     /// Creates a new [shader object][Shader].
     pub fn create_shader(&self, shader_type: ShaderType) -> Shader {
         let name = unsafe { self.gl.create_shader(shader_type.into_raw()) };
-        let ptrs = self.gl.clone();
+        let ptrs = Rc::clone(&self.gl);
         Shader {
             gl: ptrs,
             id: name,

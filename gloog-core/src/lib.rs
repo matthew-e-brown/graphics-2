@@ -1,8 +1,8 @@
 pub mod debug;
 mod macros;
 mod meta;
+mod objects;
 pub mod raw;
-pub mod shader;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -10,6 +10,7 @@ use std::rc::Rc;
 use debug::DebugClosure;
 pub(crate) use macros::*;
 pub use meta::*;
+pub use objects::shader;
 use raw::GLPointers;
 pub use raw::InitFailureMode;
 use shader::Program;
