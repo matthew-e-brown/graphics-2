@@ -10,7 +10,7 @@ use std::rc::Rc;
 use debug::DebugClosure;
 pub(crate) use macros::*;
 pub use meta::*;
-pub use objects::shader;
+pub use objects::{buffer, shader, vertex};
 use raw::GLPointers;
 pub use raw::InitFailureMode;
 use shader::Program;

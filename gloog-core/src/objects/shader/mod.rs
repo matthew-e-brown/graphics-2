@@ -174,11 +174,6 @@ impl Shader {
         let str = String::from_utf8_lossy(&buffer[..]);
         Some(str.into())
     }
-
-    /// Delete this shader.
-    pub fn delete(self) {
-        // let `self` drop.
-    }
 }
 
 impl Drop for Shader {
@@ -319,11 +314,6 @@ impl Program {
 
         let str = String::from_utf8_lossy(&buffer[..]);
         Some(str.into())
-    }
-
-    /// Delete this program object.
-    pub fn delete(self) {
-        // let `self` drop.
     }
 }
 

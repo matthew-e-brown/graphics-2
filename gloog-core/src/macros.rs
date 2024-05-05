@@ -253,7 +253,7 @@ macro_rules! gl_bitfield {
         $vis:vis struct $struct_name:ident {
             $(
                 $(#[$const_attrs:meta])*
-                pub const $const_name:ident = $gl_name:ident;
+                pub const $const_name:ident = $($gl_names:ident)|+;
             )*
         }
     ) => {
@@ -266,7 +266,7 @@ macro_rules! gl_bitfield {
         impl $struct_name {
             $(
                 $(#[$const_attrs])*
-                pub const $const_name: $struct_name = $struct_name(crate::raw::$gl_name);
+                pub const $const_name: $struct_name = $struct_name($(crate::raw::$gl_names)|+);
             )*
         }
 
